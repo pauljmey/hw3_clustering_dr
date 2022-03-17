@@ -3,10 +3,10 @@
 # Press Shift+F10 to execute it or replace it with your code.
 # Press Double Shift to search everywhere for classes, files, tool windows, actions, and settings.
 
-import mlrose_hiive as mlr
-import numpy
+#import mlrose_hiive as mlr
 import numpy as np
 import matplotlib.pyplot as plt
+from sklearn.mixture import GaussianMixture as GMM
 
 
 class Logs():
@@ -194,6 +194,8 @@ def get_plot_xmax(x, y):
 
     return x_max
 
+def pr_fl(f, len=8):
+    return str(f)[0:len]
 
 def get_ranges(data):
     hook = True
@@ -204,11 +206,12 @@ def get_ranges(data):
             data[k] = np.column_stack((data[k], col2))
             hook = True
 
-    massage = lambda x, l: x + 2 if x + 2 < len(l) else x
-    y_idx_at_max = [get_plot_xmax(x=data[k][:, 1], y= data[k][:, 0]) for k in data]
+    #massage = lambda x, l: x + 2 if x + 2 < len(l) else x
+    y_idx_at_max = [get_plot_xmax(x=data[k][:, 1], y = data[k][:, 0]) for k in data]
+
 
     all_max_x = max(y_idx_at_max)
-    all_min_x = 0
+    all_min_x = min([np.min(data[k][:, 1]) for k in data])
 
     all_max_y = max([np.max(data[k][:, 0]) for k in data])
     all_min_y = min([np.min(data[k][:, 0]) for k in data])
@@ -225,7 +228,7 @@ def get_plot_title(pr, dm, dim):
 def make_fitness_plots(
         title=None,  data=None, fn=None, rows=1, extra_data=None,
         x_label="iterations", y_label="fitness score", trunc_converged=True,
-        zero_x_bnd=True, zero_y_bnd=True
+        zero_x_bnd=False, zero_y_bnd=False
     ):
 
     plt.close()
@@ -235,17 +238,27 @@ def make_fitness_plots(
         subplot_1 = axes[0, 0]
 
     all_min_x, all_max_x, all_min_y, all_max_y = get_ranges(data)
+
+    lb_factor = .95
+    ub_factor = 1.05
     if zero_x_bnd:
-        xp_min = min(0, .9 * all_min_x)
+        xp_min = min(0, lb_factor * all_min_x)
     else:
-        xp_min = .9 * all_min_x
+        xp_min = lb_factor * all_min_x
 
     if zero_y_bnd:
-        yp_min = min(0, .9 * all_min_y)
+        yp_min = min(0, lb_factor * all_min_y)
     else:
-        yp_min = .9 * all_min_y
-    subplot_1.set_xlim(xp_min, 1.1 * all_max_x)
-    subplot_1.set_ylim(yp_min, 1.1 * all_max_y)
+        yp_min = lb_factor * all_min_y
+
+    x_lb = xp_min
+    x_ub = ub_factor * all_max_x
+    y_lb = yp_min
+    y_ub = ub_factor * all_max_y
+
+    print(f"Plot bounds = x:{pr_fl(x_lb)},{pr_fl(x_ub)}, y:{pr_fl(y_lb)},{pr_fl(y_ub)}")
+    subplot_1.set_xlim(x_lb, x_ub)
+    subplot_1.set_ylim(y_lb, y_ub)
     subplot_1.set_title(title)
     subplot_1.set_xlabel(x_label)
     subplot_1.set_ylabel(y_label)
@@ -255,7 +268,7 @@ def make_fitness_plots(
     syms = ['+', '1', '2', '3', '4']
 
     for i, k in enumerate(data):
-        log(f"raw plot {k}", {'plot_data': data[k]})
+        log(f"{title}raw plot {k}", {'plot_data': data[k]})
 
         cur_x = data[k][:, 1]
         cur_y = data[k][:, 0]
@@ -268,7 +281,7 @@ def make_fitness_plots(
             cur_x = cur_x_data_2
             cur_y = cur_y_data_2
 
-        log(f"processed plot {k} x:", cur_x)
+        log(f"{title} processed plot {k} x:", cur_x)
         log(f"processed plot {k} y:", cur_y)
 
         extra_text = 'None'
@@ -398,478 +411,6 @@ def get_prob_obj(dm_tag=None, fit_tag=None, dim=None):
     #     problem = mlr.ContinuousOpt(length=8, fitness_fn=get_fitness(fit_tag), maximize=True, max_val=8)
 
     return problem
-
-TK = 'tag'
-AK = 'args'
-FK = 'func'
-PRK = 'pr-type'
-
-HCK = 'hc'
-GAK = 'ga'
-RHCK = 'rhc'
-SIMAK = 'sim-an'
-MIMICK = 'mimic'
-
-opt_algos = {
-    HCK : {FK: mlr.hill_climb, AK: get_hc_args},
-    GAK : { FK: mlr.genetic_alg, AK: get_ga_args},
-    RHCK : { FK: mlr.random_hill_climb, AK: get_rhc_args},
-    SIMAK : { FK: mlr.simulated_annealing, AK: get_sa_args},
-    MIMICK : { FK: mlr.mimic, AK: get_mmc_args}
-}
-
-
-opt_algos_lookup = {
-    mlr.hill_climb: HCK,
-    mlr.genetic_alg: GAK,
-    mlr.random_hill_climb: RHCK,
-    mlr.simulated_annealing: SIMAK,
-    mlr.mimic: MIMICK
-}
-
-ALG_ORDER = [GAK, SIMAK, MIMICK]
-ALL_ALG_TAGS = [RHCK, SIMAK, GAK, MIMICK]
-GDK='grad-desc'
-
-net_algos = {RHCK:'random_hill_climb', SIMAK:'simulated_annealing', GAK:'genetic_alg', GDK:'gradient_descent'}
-
-QUEENS = 'Queens'
-CONT_PEAKES = 'Cont-Peaks'
-FLFLOP = 'Flip-Flop'
-F4PEAKS = '4-Peaks'
-KNSACK = 'Knap-Sack'
-MXK = 'Max-K-Color'
-O1MAX = '1-Max'
-TSP = 'Traveling-Salesperson'
-S6PEAKS = 'Six-Peaks'
-
-COMPLEX_PLOTS = {GAK:KNSACK, SIMAK:S6PEAKS, MIMICK:CONT_PEAKES}
-
-all_problems = [
-    QUEENS, MXK, O1MAX, FLFLOP, CONT_PEAKES, F4PEAKS, S6PEAKS, KNSACK
-]
-
-def get_fitness(tag, dim=None):
-    if tag == QUEENS:
-        return mlr.Queens()
-    elif tag == CONT_PEAKES:
-        return mlr.ContinuousPeaks()
-    elif tag == FLFLOP:
-        return mlr.FlipFlop()
-    elif tag == F4PEAKS:
-        return mlr.FourPeaks()
-    elif tag == KNSACK:
-        w, v = get_knapsack_wvs(length=dim)
-        return mlr.Knapsack(w, v)
-    elif tag == MXK:
-        e = get_mxk_edges(length=dim)
-        return mlr.MaxKColor(e)
-    elif tag == O1MAX:
-        return mlr.OneMax()
-    elif tag == S6PEAKS:
-        return mlr.SixPeaks()
-    elif tag == TSP:
-        c, d = get_tsp_cd()
-        return mlr.TravellingSales(coords=c)
-    else:
-        assert(False)
-
-def get_knapsack_wvs(length=None, store=[]):
-
-    if not store:
-        no_dupes = False
-        wlist = np.array([x+1 for x in range(500)])
-        vlist = np.array([x + 1 for x in range(200)])
-        while not no_dupes:
-            weights = np.random.choice(wlist, size=100)
-            values = np.random.choice(vlist, size=100)
-
-            dupe_check = [(weights[i], values[i]) for i, x in enumerate(weights)]
-            dupe_check_len = len(set(dupe_check))
-            if dupe_check_len == 100:
-                no_dupes = True
-
-        store.append(weights)
-        store.append(values)
-
-    w = store[0]
-    v = store[1]
-    return w[0:length], v[0:length]
-
-def get_mxk_edges(length=8, store=[]):
-    def get_degrees(nds, eds):
-        degrees = {i:[] for i, x in enumerate(nds)}
-        nodes_1 = [t[0] for t in eds]
-        nodes_2 = [t[1] for t in eds]
-
-        for x in nds:
-            s1 = [1 if z == x else 0 for z in nodes_1]
-            s2 = [1 if z == x else 0 for z in nodes_2]
-            tot = sum(s1) + sum(s2)
-            degrees[tot].append(x)
-
-        return degrees
-
-    def get_lowest_degree(d, eds):
-        dkeys = list(d)
-        dkeys.sort()
-        ret_degree = None
-        ret_node = None
-        degs = []
-        nds = []
-        for k in dkeys:
-            for idx, nd in enumerate(d[k]):
-                if not nds:
-                    nds.append(nd)
-                    degs.append(k)
-                else:
-                    idx2 = idx
-                    n1 = nds[0]
-                    ed = (min(n1, nd), max(n1, nd))
-                    if ed in eds:
-                        continue
-                    else:
-                        eds.append(ed)
-                        k1 = degs[0]
-                        nds = []
-                        degs = []
-                        ret = d[k1].pop(0)
-                        assert(ret == n1)
-                        if k1 + 1 not in d:
-                            d[k1 + 1] = []
-                            dkeys.append(k1 + 1)
-
-                        d[k1 + 1].append(ret)
-                        k2 = k
-                        if k2 + 1 not in d:
-                            d[k2 + 1] = []
-                            dkeys.append(k2 + 1)
-
-                        if k1 == k2:
-                            idx2 -= 1 # decrement due to popping IF in the same d item (ie same list)
-                            dkeys.append(k1)
-
-                        ret = d[k2].pop(idx2)
-                        assert (ret == nd)
-                        d[k2 + 1].append(ret)
-
-                        print(d)
-                        return True
-        return False
-
-    if not store:
-        store.append([])
-        store.append([])
-
-    if len(store[0]) != length:
-
-        store[0] = [x for x in range(length)]
-        nodes = store[0]
-        store[1] = []
-        edges = store[1]
-        sub1 = [x for x in range(int(.5 + length/2))]
-        sub2 = [x + int(length/2) for x in range(int(.5 + length/2))]
-        for i, x in enumerate(sub1):
-            if i != 0:
-                edges.append((0, x))
-                n1 = sub2[0]
-                ed = (n1, n1 + i)
-                if ed not in edges:
-                    edges.append(ed)
-
-        edges.append((sub1[1], sub2[0])) # connect 2 subtrees
-
-        degrees = get_degrees(nodes, edges)
-        dx = None
-        dy = None
-
-        print(degrees)
-        while True:
-            if not get_lowest_degree(degrees, edges):
-                break
-
-            hook = True
-
-        #print(f"|Edges| = {len(set(edges))}")
-        #print(edges)
-
-    assert(len(store[0]) == length) # make sure the nodes were actually initialized
-    edges = store[1]
-    sub_len = int(len(edges)/2)
-    return edges[0:sub_len]
-
-
-def get_tsp_cd():
-    coords = [(0, 0), (3, 0), (3, 2), (2, 4), (1, 3)]
-    dists = [(0, 1, 3), (0, 2, 5), (0, 3, 1), (0, 4, 7), (1, 3, 6),
-        (4, 1, 9), (2, 3, 8), (2, 4, 2), (3, 2, 8), (3, 4, 4)]
-    return coords, dists
-
-def run_prob(exp_name=QUEENS, alg_list=None, pd=None, dim=None):
-
-    # Define initial state
-    plot_data = {}
-    for k,v in alg_list.items():
-        print(f'running {k}')
-        pr_obj = get_prob_obj(fit_tag=exp_name, dm_tag=DISCR, dim=dim)
-        if pr_obj is None:
-            continue
-        kwa = alg_list[k][AK]()
-        ret = alg_list[k][FK](pr_obj, **kwa)
-        cur_key = k
-        plot_data[cur_key] = {}
-        plot_data[cur_key][BSK] = ret[0]
-        plot_data[cur_key][BFK] = ret[1]
-        plot_data[cur_key][BFCK] = ret[2]
-        print(f"Best state = {ret[0]}")
-        print(f"Best fitness = {ret[1]}")
-
-    return plot_data
-
-
-def diff_series(s1, s2):
-    r1 = s1 - s2
-    if len(np.where(s1 == 0)[0].tolist()) > 0:
-        r2 = None
-    else:
-        r2 = (s1  - s2) / s1
-
-    return r1, r2
-
-
-def run_alg_vs_complexity(pr_tag=None, start=None, to_explore=None, step=None,
-        optimal=None, baseline=None, tbaseline=None
-    ):
-
-    print(f'Optimization Problem: {pr_tag}')
-    x = numpy.zeros(to_explore)
-    y = numpy.zeros(to_explore)
-    plot_data = {}
-    time_plot_data = {}
-    xdata = {}
-    txdata = {}
-
-    for alg_tag in ALL_ALG_TAGS:
-        print(f'running {alg_tag}')
-
-        results = []
-        import time
-        tic = time.time()
-        end_range = 1 + start + (to_explore - 1)*step
-        for i in range(start, end_range, step):
-
-            if i % 10 == 0:
-                print(f"Problem dimension = {i}")
-
-            pr_obj = get_prob_obj(fit_tag=pr_tag, dm_tag=DISCR, dim=i)
-            if pr_obj is None:
-                continue
-            alg = opt_algos[alg_tag]
-            if not optimal or alg_tag not in optimal:
-                kwa = alg[AK](curve=False)
-            else:
-                kwa = alg[AK](curve=False, **optimal[alg_tag])
-
-            ret = alg[FK](pr_obj, **kwa)
-            toc = time.time() - tic
-            results.append((i, ret[1], ret[0], toc))
-
-
-        ax = [x[0] for x in results]
-        ay = [x[1] for x in results]
-        max_idx = np.argmax(ay)
-        curtxt = f" max={ay[max_idx]} @ {ax[max_idx]}"
-        xdata[alg_tag] = curtxt
-        cur_key = alg_tag
-        plot_data[cur_key] = {}
-        time_plot_data[cur_key]={}
-        #plot_data[cur_key][BSK] = None
-        #plot_data[cur_key][BFK] = None
-        plot_series = np.column_stack((np.array(ay), np.array(ax)))
-        plot_data[cur_key] = plot_series
-        axt = [x[0] for x in results]
-        ayt = [x[3] for x in results]
-        t_plot_series = np.column_stack((np.array(ayt), np.array(axt)))
-        time_plot_data[cur_key] = t_plot_series
-        txdata[alg_tag] = f" max={ayt[-1]} @ {axt[-1]}" # time is monotonic
-
-    if not optimal:
-        end = start + (to_explore - 1) * step
-        title = get_plot_title(pr_tag, ":Performance-", f"size:{start}-{end}")
-        log(f"{title}", {'plot_data': plot_data})
-        fn_tag = pr_tag + '-' + DISCR + '-' + "complexity_"
-        fn = get_plot_fn(tag=fn_tag)
-        make_fitness_plots(title=title, data=plot_data, fn=fn, x_label="size", extra_data=xdata)
-        title = get_plot_title(pr_tag, ":Time_Performance-", f"size:{start}-{end}")
-        log(f"{title}", {'plot_data': time_plot_data})
-        fn_tag = pr_tag + '-' + DISCR + '-' + "time-complexity_"
-        fn = get_plot_fn(tag=fn_tag)
-        make_fitness_plots(title=title, data=time_plot_data, fn=fn, x_label="size", y_label="time", extra_data=None)
-    else:
-        if not baseline:
-            pass
-        else:
-            for k3 in tbaseline:
-                if k3 in optimal:
-                    diffs, rdiffs = diff_series(baseline[k3][:, 0], plot_data[k3][:, 0])
-                    log(f"{k3} optimal deltas from baseline: ", diffs)
-                    if rdiffs is None:
-                        log("Zero divisors not calculating relative differences")
-                    else:
-                        log(f"{k3} optimal rel deltas: ", rdiffs)
-
-            title = pr_tag + f":Perf-Tuned:\n{optimal}"
-            log(f"{title}-tuned", {'plot_data': plot_data})
-            log(f"optimal args=", optimal)
-            fn_tag = pr_tag + '-' + DISCR + '-' + "complexity_tuned_"
-            fn = get_plot_fn(tag=fn_tag)
-            pd2 = {k + "_0":v for k,v in baseline.items() if k in optimal}
-            for k2 in baseline:
-                if k2 in optimal:
-                    ax = [x[1] for x in baseline[k2]]
-                    ay = [x[0] for x in baseline[k2]]
-                    max_idx = np.argmax(ay)
-                    curtxt = f" max={ay[max_idx]} @ {ax[max_idx]}"
-                    xdata[k2 + "_0"] = curtxt
-
-            pd2.update(plot_data)
-            make_fitness_plots(title=title, data=pd2, fn=fn, x_label="size", extra_data=xdata)
-        if not tbaseline:
-            pass
-        else:
-            for k3 in tbaseline:
-                if k3 in optimal:
-                    diffs, rdiffs = diff_series(tbaseline[k3][:, 0], time_plot_data[k3][:, 0])
-                    log(f"{k3} time deltas: ", diffs)
-                    if rdiffs is None:
-                        log("Zero divisors not calculating relative differences")
-                    else:
-                        log(f"{k3} rel times deltas: ", rdiffs)
-
-            title = get_plot_title(pr_tag, ":Time_Performance-Tuned", f"size:{start}-{start + to_explore - 1}")
-            log(f"{title}-tuned", {'plot_data': time_plot_data})
-            log(f"optimal args=", optimal)
-            fn_tag = pr_tag + '-' + DISCR + '-' + "time-complexity_tuned_"
-            fn = get_plot_fn(tag=fn_tag)
-            tpd2 = {k + "_0": v for k, v in tbaseline.items() if k in optimal}
-            for k2 in tbaseline:
-                if k2 in optimal:
-                    ax = [x[1] for x in tbaseline[k2]]
-                    ay = [x[0] for x in tbaseline[k2]]
-                    curtxt = f" max={ay[-1]} @ {ax[-1]}"
-                    txdata[k2 + "_0"] = curtxt
-
-            tpd2.update(time_plot_data)
-            make_fitness_plots(title=title, data=tpd2, fn=fn,
-                x_label="size", y_label="time", extra_data=txdata
-            )
-
-    return plot_data, time_plot_data # will be used as baselines later
-
-def run_alg_tuning(alg_tag=None, alg_param=None, dim=None):
-
-    # Define initial state
-    plot_data = {}
-    xdata = {}
-    pr_tag = COMPLEX_PLOTS[alg_tag]
-
-    param = list(alg_param)[0]
-    param_values = alg_param[param]
-    print(f'tuning plot for {param}')
-    pr_obj = get_prob_obj(fit_tag=pr_tag, dm_tag=DISCR, dim=dim)
-    for v in param_values:
-        print(f'value = {v}')
-        pd = {param: v}
-        kwa = opt_algos[alg_tag][AK](**pd)
-        ret = opt_algos[alg_tag][FK](pr_obj, **kwa)
-        cur_key = f"{param}:{v}"
-        plot_data[cur_key] = {}
-        plot_data[cur_key][BSK] = ret[0]
-        plot_data[cur_key][BFK] = ret[1]
-        plot_data[cur_key][BFCK] = ret[2]
-
-        ax = [x[1] for x in ret[2]]
-        ay = [x[0] for x in ret[2]]
-        max_idx = np.argmax(ay)
-        xdata[cur_key] = f"max={ay[max_idx]} @ {ax[max_idx]}"
-
-    title= f"{alg_tag}:{param} on {pr_tag}:sz:{dim}"
-    log(f"{title}", {'plot_data': plot_data})
-    fn_tag = pr_tag + '-' + alg_tag + '-' + param + f"-d-{dim}-"
-    fn = get_plot_fn(tag=fn_tag)
-    pd2 = {k: v[BFCK] if BFCK in v else v for k, v in plot_data.items()}  # strip out unnecessary
-    make_fitness_plots(title=title, data=pd2, fn=fn, trunc_converged=False, extra_data=xdata)
-
-def run_all_opt(dim=None):
-
-    for pr in all_problems:
-        print(f'Optimization Problem: {pr}')
-        pd = run_prob(exp_name=pr, alg_list=opt_algos, dim=dim)
-        xdata = {k:f"{x[BFK]}, {x[BSK]}" for k, x in pd.items()}
-        pd2 = {k: v[BFCK] if BFCK in v else v for k, v in pd.items()}  # strip out unnecessary
-        title = get_plot_title(pr, DISCR, dim)
-        fn_tag = pr + '-' + DISCR + '-' + f"d-{dim}" + '_'
-        fn = get_plot_fn(tag=fn_tag)
-        make_fitness_plots(title=title, data=pd2, fn=fn, extra_data=xdata)
-        log(title, {'plot_data': pd})
-
-def nn_run():
-    nn_model1 = mlr.NeuralNetwork(
-        phidden_nodes=[2], activation='relu',
-        algorithm='random_hill_climb', max_iters=1000,
-        bias=True, is_classifier=True, learning_rate=0.0001,
-        early_stopping=True, clip_max=5, max_attempts=100,
-        random_state=3
-    )
-
-# 2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37, 41, 43, 47, 53, 59, 61, 67, 71, 73, 79, 83, 89, 97
-prs = [2,3,5,7,11,13,17,19, 23, 29, 31, 37, 41, 43, 47, 53, 59, 61, 67, 71, 73, 79, 83, 89, 97]
-def get_max_pr(num):
-    #thresh = .5*num
-    thresh = num
-    ret = (None, None)
-    for i, x in enumerate(prs):
-        # if x < thresh:
-        if x*x < thresh :
-            ret = (i, x)
-        else:
-            break
-
-    if ret[1] == prs[-1]:
-        print("hit max available prime!!!!")
-
-    return ret
-
-def get_repr(snum):
-    if type(snum) is str:
-        snum = int(snum)
-
-    pr_max = get_max_pr(snum)
-    cur_prs = prs[0:pr_max[0] + 1]
-    n_repr= [snum%x for x in cur_prs]
-    print(n_repr)
-    return n_repr
-
-def get_num_for_repr(p_repr="0113"):
-    if type(p_repr) is str:
-        p_repr = [int(x)%prs[i] for i, x in enumerate(p_repr)]
-
-    max = prs[-1] * prs[-1]
-    ret = None
-    for x in range(max):
-        if x >= 3:
-            cur_repr = get_repr(x)
-            if len(cur_repr) < len(p_repr):
-                continue
-            elif len(cur_repr) == len(p_repr):
-                if cur_repr == p_repr:
-                    ret = x
-                    break
-            else:
-                assert (False)
-
-    return ret
-
 
 DS_1 = 'digits'
 DS_2 = 'Bach'
@@ -1050,95 +591,253 @@ def run_find_weights(algo=None):
 
     return ret
 
+def get_digits():
+    from sklearn.preprocessing import MinMaxScaler
+    from sklearn.preprocessing import OneHotEncoder
+
+    datasets = load_datasets(CODE_TEST_1)
+    cur_ds = datasets[0]
+
+    # Normalize feature data
+    scaler = MinMaxScaler()
+
+    X_train_scaled = scaler.fit_transform(cur_ds['X'])
+    y_train = cur_ds['Y']
+
+    # One hot encode target values
+    one_hot = OneHotEncoder()
+    y_train_hot = one_hot.fit_transform(y_train.reshape(-1, 1)).todense()
+    return X_train_scaled, y_train_hot
+
+def get_bach():
+    from sklearn.preprocessing import MinMaxScaler
+    from sklearn.preprocessing import OneHotEncoder
+
+    datasets = load_datasets(CODE_TEST_2)
+    cur_ds = datasets[0]
+
+    # Normalize feature data
+    scaler = MinMaxScaler()
+
+    X_train_scaled = scaler.fit_transform(cur_ds['X'])
+    y_train = cur_ds['Y']
+
+    # One hot encode target values
+    one_hot = OneHotEncoder()
+    y_train_hot = one_hot.fit_transform(y_train.reshape(-1, 1)).todense()
+    return X_train_scaled, y_train_hot
+
+def get_bach():
+    from sklearn.preprocessing import MinMaxScaler
+    from sklearn.preprocessing import OneHotEncoder
+
+    datasets = load_datasets(CODE_TEST_2)
+    cur_ds = datasets[0]
+
+    # Normalize feature data
+    scaler = MinMaxScaler()
+
+    X_train_scaled = scaler.fit_transform(cur_ds['X'])
+    y_train = cur_ds['Y']
+
+    # One hot encode target values
+    one_hot = OneHotEncoder()
+    y_train_hot = one_hot.fit_transform(y_train.reshape(-1, 1)).todense()
+    return X_train_scaled, y_train_hot
+
+def run_gmm(k=2, get_ds=None, start=2, npoints=10, limit=None):
+    # code based on https://github.com/vlavorini/ClusterCardinality/blob/master/Cluster%20Cardinality.ipynb
+    # n_clusters = np.arange(2, 20)
+    # sils = []
+    # sils_err = []
+    # iterations = 20
+    # for n in n_clusters:
+    #     tmp_sil = []
+    #     for _ in range(iterations):
+    #         gmm = GMM(n, n_init=2).fit(embeddings)
+    #         labels = gmm.predict(embeddings)
+    #         sil = metrics.silhouette_score(embeddings, labels, metric='euclidean')
+    #         tmp_sil.append(sil)
+    #     val = np.mean(SelBest(np.array(tmp_sil), int(iterations / 5)))
+    #     err = np.std(tmp_sil)
+    #     sils.append(val)
+    #     sils_err.append(err)
+
+    import numpy as np
+    from sklearn.mixture import GaussianMixture as GMM
+    from sklearn.metrics import silhouette_score
+
+    X, y = get_ds()
+
+    instances = X.shape[0]
+
+    if not limit:
+        limit = instances
+
+    step = int((limit - start) / (npoints - 1))
+
+    end = 1 + start + (npoints - 1) * step
+    cl_list = list(range(start, end, step))
+    print(f"Evaluting cluster sizes: {cl_list}")
+    results = np.zeros((len(cl_list), 2))
+
+    for i, k in enumerate(cl_list):
+        print(f'{k} centers')
+
+        gmm_obj = GMM(k)
+        gmm_obj.fit(X)
+        label = gmm_obj.predict(X)
+        results[i] = [silhouette_score(X, label), k]
+
+    return results
+
+
+def run_k_means2(k=2, get_ds=None, start=2, npoints=10, limit=None, skipLast=False):
+    import numpy as np
+    from sklearn.cluster import KMeans
+    from sklearn.metrics import silhouette_score
+
+    X, y = get_ds()
+
+    instances = X.shape[0]
+
+    if not limit:
+        limit = instances
+
+    step = int((limit - start)/(npoints - 1))
+
+    end = 1 + start + (npoints - 1) * step
+    cl_list = list(range(start, end, step))
+    print(f"Evaluting cluster sizes: {cl_list}")
+    results = np.zeros((len(cl_list), 2))
+
+    for i, k in enumerate(cl_list):
+        print(f'{k} clusters')
+        if skipLast and i == len(cl_list) - 1:
+            pass
+        else:
+            KMean = KMeans(n_clusters=k)
+            KMean.fit(X)
+            label = KMean.predict(X)
+            results[i] = [silhouette_score(X, label), k]
+
+    return results
+
+
+
+KMEANS = 'k-means'
+GMMK = 'gmm'
+PCA = 'pca'
+
 def main(args):
-    to_explore = 12
-    if 'exp' in args:
-        # exploratory
-        opt_dims = [15]
-        if 'opt_dims' in args:
-            idx = args.index('opt_dims')
-            opt_dims = [int(x) for x in args[idx + 1:] if x.isnumeric()]
 
-        Logs.set_log_file("exploratory_plots")
+    if KMEANS in args:
 
-        for dim in opt_dims:
-            run_all_opt(dim=dim)
+        Logs.set_log_file('kmeans_init_clustering')
+        if DS_1 in args:
+            ranges = [(2, 42)]
+            for t in ranges:
+                st = t[0]
+                lim = t[1]
+                results = run_k_means2(start=st, limit=lim, get_ds=get_digits, npoints=40)
 
-    all_complexity_res = {}
-    if 'complexity' in args:
-        Logs.set_log_file("performance")
+                max_idx = np.argmax(results[:, 0])
+                xdata = {'kmeans':f"max y:{pr_fl(results[max_idx, 0])} x:{int(results[max_idx, 1])}"}
+                make_fitness_plots(
+                    title='Digits Kmeans Silhouette Scores', fn=get_plot_fn(f'k_means_1_digits_{st}_{lim}'), data={'kmeans':results},
+                    x_label='k', y_label='Silh Scor', extra_data=xdata
+                )
 
-        for k in ALG_ORDER:
-            pr_tag = COMPLEX_PLOTS[k]
-            Logs.set_log_file("perform_" + pr_tag)
-            pd_baseline, tpd_baseline = run_alg_vs_complexity(pr_tag=pr_tag, start=5, to_explore=to_explore, step=5)
-            all_complexity_res[pr_tag] = {}
-            all_complexity_res[pr_tag]['baseline'] = pd_baseline
-            all_complexity_res[pr_tag]['time baseline'] = tpd_baseline
+        if DS_2 in args:
+            # ranges = [(1400, 1500), (1501, 1600), (1601, 1700), (1701, 1800)]
+            ranges = [(1500, 1519, 20), (1520, 1539, 20), (1540, 1559, 20), (1560, 1579, 20), (1580, 1599, 20)]
 
-    if 'tuning' in args:
-        Logs.set_log_file("tuning graphs")
-        params = {
-            SIMAK : [{'schedule':[mlr.ArithDecay, mlr.GeomDecay, mlr.ExpDecay]}],
-            GAK : [{'pop_size':[50, 75, 100, 125, 150, 200 ]}, {'mutation_prob': [.05, .1, .15, .2, .25]}],
-            MIMICK : [{'pop_size':[50, 100, 150, 200, 250]}, {'keep_pct':[0.1, .15, 0.2, .25, 0.3]}]
-        }
+            for t in ranges:
+                st = t[0]
+                lim = t[1]
+                if len(t) > 2:
+                    pts = t[2]
+                else:
+                    pts = 10
 
-        for dim in [20, 30]:
-            for k in ALG_ORDER:
-                for prm in params[k]:
-                    run_alg_tuning(alg_tag=k, alg_param=prm, dim=dim)
+                results = run_k_means2(start=st, limit=lim, get_ds=get_bach, npoints=pts)
 
-    if 'opt' in args:
-        Logs.set_log_file("opt-perform")
+                max_idx = np.argmax(results[:, 0])
+                xdata = {'kmeans':f"max y:{pr_fl(results[max_idx, 0])} x:{int(results[max_idx, 1])}"}
+                make_fitness_plots(
+                    title='Bach Harmony Kmeans Silhouette Scores', fn=get_plot_fn(f'k_means_1_bach_{st}_{lim}'), data={'kmeans': results},
+                    x_label='k', y_label='Silh Scor', extra_data=xdata, zero_x_bnd=False, zero_y_bnd=False
+                )
 
-        for k in ALG_ORDER:
-            pr_tag = COMPLEX_PLOTS[k]
-            Logs.set_log_file("perform_tuned_" + pr_tag)
-            opt_args = {
-                GAK:{'pop_size':100, 'mutation_prob': .15},
-                MIMICK:{'pop_size':250, 'keep_pct': .25}
-            }
-            pd_bl = all_complexity_res[pr_tag]['baseline']
-            tpd_bl = all_complexity_res[pr_tag]['time baseline']
-            run_alg_vs_complexity(
-                pr_tag=pr_tag, start=5, to_explore=to_explore,
-                step=5, optimal=opt_args, baseline=pd_bl, tbaseline= tpd_bl
-            )
+    if GMMK in args:
+        Logs.set_log_file('gmm_init_clustering')
+        if DS_1 in args:
+            ranges = [(2, 50, 49)]
+            for t in ranges:
+                st = t[0]
+                lim = t[1]
 
-    if 'netw' in args:
-        Logs.set_log_file("nnet-weights")
-        #net_algos = ['random_hill_climb', 'gradient_descent']
-        plot_data = {}
-        nalgo_keys = [RHCK, SIMAK, GAK, GDK]
+                if len(t) > 2:
+                    pts = t[2]
+                else:
+                    pts = 10
 
-        for alg in nalgo_keys:
-            print(f'running {alg} on neural net weights')
-            ret = run_find_weights(net_algos[alg])
-            if alg == GDK:
-                ret.fitness_curve *= -1
+                results = run_gmm(start=st, limit=lim, get_ds=get_digits, npoints=pts)
 
-            plot_data[alg] = ret.fitness_curve
+                max_idx = np.argmax(results[:, 0])
+                xdata = {'gmm': f"max y:{pr_fl(results[max_idx, 0])} x:{int(results[max_idx, 1])}"}
+                make_fitness_plots(
+                    title='Digits GMM Silhouette Scores', fn=get_plot_fn(f'gmm_1_digits_{st}_{lim}'),
+                    data={'gmm': results},
+                    x_label='k', y_label='Silh Score', extra_data=xdata
+                )
 
-        # def make_fitness_plots(
-        #         title=None, data=None, fn=None, rows=1, extra_data=None,
-        #         x_label="iterations", y_label="fitness score"
-        # ):
-        title = 'NN_weights' + ':fitness_curves'
-        log(f"{title}", {'plot_data': plot_data})
-        fn_tag = 'NN_weights' + '-' + "fitness_"
-        fn = get_plot_fn(tag=fn_tag)
-        make_fitness_plots(title='NN_weights', data=plot_data, fn=fn, trunc_converged=False)
+        if DS_2 in args:
+            print("Bach clustering")
+            # ranges = [(1400, 1500), (1501, 1600), (1601, 1700), (1701, 1800)]
+            # ranges = [(1500, 1519, 20), (1520, 1539, 20), (1540, 1559, 20), (1560, 1579, 20), (1580, 1599, 20)]
+            #ranges = [(2, 1000, 20), (1001, 2000, 20), (2001, 3000, 20), (3001, 4000, 20), (4001, 5000, 20), (5001, 6000, 20)]
+            ranges = [#(2, 1000, 5), (1001, 2000, 5), (2, 500, 50),
+                #(501, 1000, 20), (1001, 1500, 20), (1501, 2000, 20)
+                 #(2000, 2500, 20), (1900, 2000, 101), (1800, 1900, 101)
+                (2000, 2024, 25 ), (2025, 2049, 25 ), (2050, 2074, 25 ), (2075, 2099, 25 )
+            ]
+            for t in ranges:
+                st = t[0]
+                lim = t[1]
+                if len(t) > 2:
+                    pts = t[2]
+                else:
+                    pts = 10
 
-    #get_repr(148)
-    #print(get_num_for_repr(get_repr(148)))
+                results = run_gmm(start=st, limit=lim, get_ds=get_bach, npoints=pts)
+
+                max_idx = np.argmax(results[:, 0])
+                xdata = {'gmm': f"max y:{pr_fl(results[max_idx, 0])} x:{int(results[max_idx, 1])}"}
+                make_fitness_plots(
+                    title='Bach Harmony Kmeans Silhouette Scores', fn=get_plot_fn(f'gmm_1_bach_{st}_{lim}'),
+                    data={'gmm': results},
+                    x_label='k', y_label='Silh Score', extra_data=xdata, zero_x_bnd=False, zero_y_bnd=False
+                )
 
 
-# Press the green button in the gutter to run the script.
+max_silh_km_bach = 1575
+max_silh_km_digits = 15
+max_silh_gmm_bach = 2056
+max_silh_gmm_digits = 17
+
 if __name__ == '__main__':
     import sys
+    import datetime
     main(sys.argv[1:])
-    #get_repr("135")
+
+    time_now = datetime.datetime.now().strftime("%m_%d_%H_%M")
+    print(f"Finished execution at {time_now}")
+    log("Finished execution")
+
+
+
+
 
 # See PyCharm help at https://www.jetbrains.com/help/pycharm/
 
