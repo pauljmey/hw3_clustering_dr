@@ -7,6 +7,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
 from sklearn.mixture import GaussianMixture as GMM
+from functools import partial
 
 
 class Logs():
@@ -561,35 +562,24 @@ def load_datasets(dset=1):
     return loaded
 
 
-def run_find_weights(algo=None):
-    from sklearn.preprocessing import MinMaxScaler
-    from sklearn.preprocessing import OneHotEncoder
+max_silh_km_bach = 1575
+max_silh_km_digits = 15
+max_silh_gmm_bach = 2056
+max_silh_gmm_digits = 17
 
-    datasets = load_datasets(CODE_TEST_1)
-    cur_ds = datasets[0]
+KMEANSK = 'k-means'
+GMMK = 'gmm'
 
-    # Normalize feature data
-    scaler = MinMaxScaler()
-
-    X_train_scaled = scaler.fit_transform(cur_ds['X'])
-    y_train = cur_ds['Y']
-
-    # One hot encode target values
-    one_hot = OneHotEncoder()
-    y_train_hot = one_hot.fit_transform(y_train.reshape(-1, 1)).todense()
-
-    nn_model1 = mlr.NeuralNetwork(
-        hidden_nodes=[37, 37], activation='relu',
-        algorithm=algo, max_iters=1000,
-        bias=True, is_classifier=True, learning_rate=0.00179,
-        early_stopping=True, clip_max=5, max_attempts=100,
-        random_state=3,
-        curve=True
-    )
-
-    ret = nn_model1.fit(X_train_scaled, y_train_hot)
-
-    return ret
+max_cluster_scores = {
+    DS_1: {
+        KMEANSK: max_silh_km_digits,
+        GMMK: max_silh_gmm_digits
+    },
+    DS_2: {
+        KMEANSK: max_silh_km_bach,
+        GMMK: max_silh_gmm_bach
+    }
+}
 
 def get_digits():
     from sklearn.preprocessing import MinMaxScaler
@@ -609,23 +599,6 @@ def get_digits():
     y_train_hot = one_hot.fit_transform(y_train.reshape(-1, 1)).todense()
     return X_train_scaled, y_train_hot
 
-def get_bach():
-    from sklearn.preprocessing import MinMaxScaler
-    from sklearn.preprocessing import OneHotEncoder
-
-    datasets = load_datasets(CODE_TEST_2)
-    cur_ds = datasets[0]
-
-    # Normalize feature data
-    scaler = MinMaxScaler()
-
-    X_train_scaled = scaler.fit_transform(cur_ds['X'])
-    y_train = cur_ds['Y']
-
-    # One hot encode target values
-    one_hot = OneHotEncoder()
-    y_train_hot = one_hot.fit_transform(y_train.reshape(-1, 1)).todense()
-    return X_train_scaled, y_train_hot
 
 def get_bach():
     from sklearn.preprocessing import MinMaxScaler
@@ -644,6 +617,7 @@ def get_bach():
     one_hot = OneHotEncoder()
     y_train_hot = one_hot.fit_transform(y_train.reshape(-1, 1)).todense()
     return X_train_scaled, y_train_hot
+
 
 def run_gmm(k=2, get_ds=None, start=2, npoints=10, limit=None):
     # code based on https://github.com/vlavorini/ClusterCardinality/blob/master/Cluster%20Cardinality.ipynb
@@ -723,115 +697,258 @@ def run_k_means2(k=2, get_ds=None, start=2, npoints=10, limit=None, skipLast=Fal
 
     return results
 
+def dr_pca(X,y):
+    from sklearn import decomposition
+    pca = decomposition.PCA(n_components=.95)
+    pca.fit(X)
+
+    return pca, pca.transform(X)
 
 
-KMEANS = 'k-means'
-GMMK = 'gmm'
-PCA = 'pca'
+def pca_eval_plot(estimator=None, fn=None):
+    import matplotlib.pyplot as plt
+    pca = estimator
+    plt.rcParams["figure.figsize"] = (12, 6)
+
+    fig, ax = plt.subplots()
+
+    y = np.cumsum(pca.explained_variance_ratio_)
+    xi = np.arange(1, y.shape[0] + 1, step = 1)
+
+    plt.ylim(0.0, 1.1)
+    plt.plot(xi, y, marker='o', linestyle='--', color='b')
+
+    plt.xlabel('Number of Components')
+    plt.xticks(np.arange(0, 11, step=1))  # change from 0-based array index to 1-based human-readable label
+    plt.ylabel('Cumulative variance (%)')
+    cutoff = [(ii, v) for ii, v in enumerate(y) if v >= .95]
+    last = cutoff[0][0]
+    plt.title(f'The number of components needed to explain variance, cutoff component = {last}')
+
+    plt.axhline(y=0.95, color='r', linestyle='-')
+    plt.text(0.5, 0.85, '95% cut-off threshold', color='red', fontsize=16)
+
+    ax.grid(axis='x')
+    plt.savefig(fn)
+    plt.show()
+
+def run_reduction(reduce_func=None, plot_func=None, get_ds=None, fn=None):
+    import numpy as np
+    from sklearn.cluster import KMeans
+    from sklearn.metrics import silhouette_score
+
+    X, y = get_ds()
+
+    instances = X.shape[0]
+
+    estimator, reduced_x = reduce_func(X, y)
+    #eval plots
+    plot_func(estimator=estimator, fn=fn)
+
+    return X
+
+
+
+STEP1 = 's1'
+STEP2 = 's2'
+STEP3 = 's3'
+STEP4 = 's4'
+STEP5 = 's5'
+
+
+PCAK = 'pca'
+ICAK = 'ica'
+
+
+def run_km_clustering(tag, ranges=None, get_ds=None):
+    #ranges = [(2, 42)]
+    for t in ranges:
+        st = t[0]
+        lim = t[1]
+        if len(t) > 2:
+            pts = t[2]
+        else:
+            pts = 10
+
+        results = run_k_means2(start=st, limit=lim, get_ds=get_ds, npoints=pts)
+
+        max_idx = np.argmax(results[:, 0])
+        plot_tag = 'kmeans'
+        xdata = {plot_tag: f"max y:{pr_fl(results[max_idx, 0])} x:{int(results[max_idx, 1])}"}
+        make_fitness_plots(
+            title=f'{tag} Kmeans Silhouette Scores', fn=get_plot_fn(f'k_means_{tag}_{st}_{lim}'),
+            data={plot_tag: results},
+            x_label='k', y_label='Silh Scor', extra_data=xdata
+        )
+
+def run_gmm_clustering(tag, ranges=None, get_ds=None):
+    #ranges = [(2, 42)]
+    for t in ranges:
+        st = t[0]
+        lim = t[1]
+        if len(t) > 2:
+            pts = t[2]
+        else:
+            pts = 10
+
+        results = run_gmm(start=st, limit=lim, get_ds=get_bach, npoints=pts)
+
+        max_idx = np.argmax(results[:, 0])
+        plot_tag = 'gmm'
+        xdata = {plot_tag: f"max y:{pr_fl(results[max_idx, 0])} x:{int(results[max_idx, 1])}"}
+        make_fitness_plots(
+            title=f'{tag} GMM Silhouette Scores', fn=get_plot_fn(f'gmm_{tag}_{st}_{lim}'),
+            data={plot_tag: results},
+            x_label='k', y_label='Silh Score', extra_data=xdata, zero_x_bnd=False, zero_y_bnd=False
+        )
+
+def run_pca_reduction(cluster_tag=None, ds_tag=None, get_ds=None, cluster_func=None):
+    def get_data_stub(d=None):
+        return d, None
+
+    Logs.set_log_file("PCA_Step_2")
+
+    ds_x_reduced = run_reduction(
+        reduce_func=dr_pca, plot_func=pca_eval_plot, get_ds=get_ds,
+        fn=get_plot_fn(f'Step_2_PCA_{ds_tag}')
+    )
+
+    get_reduced = partial(get_data_stub, d=ds_x_reduced)
+    ub = max_cluster_scores[ds_tag][cluster_tag] + 1
+    ranges = [(2, ub, 10)]
+    cluster_func(tag=f'{ds_tag}_reduced', ranges=ranges, get_ds=get_reduced)
+
 
 def main(args):
 
-    if KMEANS in args:
+    if STEP1 in args:
 
-        Logs.set_log_file('kmeans_init_clustering')
-        if DS_1 in args:
-            ranges = [(2, 42)]
-            for t in ranges:
-                st = t[0]
-                lim = t[1]
-                results = run_k_means2(start=st, limit=lim, get_ds=get_digits, npoints=40)
+        if KMEANS in args:
+            Logs.set_log_file("Kmeans_Step_1")
+            if DS_1 in args:
+                ranges = [(2, 42)]
+                run_km_clustering(tag='digits', ranges=ranges, get_ds=get_digits)
 
-                max_idx = np.argmax(results[:, 0])
-                xdata = {'kmeans':f"max y:{pr_fl(results[max_idx, 0])} x:{int(results[max_idx, 1])}"}
-                make_fitness_plots(
-                    title='Digits Kmeans Silhouette Scores', fn=get_plot_fn(f'k_means_1_digits_{st}_{lim}'), data={'kmeans':results},
-                    x_label='k', y_label='Silh Scor', extra_data=xdata
-                )
+            if DS_2 in args:
+                # ranges = [(1400, 1500), (1501, 1600), (1601, 1700), (1701, 1800)]
+                ranges = [(1500, 1519, 20), (1520, 1539, 20), (1540, 1559, 20), (1560, 1579, 20), (1580, 1599, 20)]
 
-        if DS_2 in args:
-            # ranges = [(1400, 1500), (1501, 1600), (1601, 1700), (1701, 1800)]
-            ranges = [(1500, 1519, 20), (1520, 1539, 20), (1540, 1559, 20), (1560, 1579, 20), (1580, 1599, 20)]
+                run_km_clustering(tag='Bach_Harmony', ranges=ranges, get_ds=get_bach)
 
-            for t in ranges:
-                st = t[0]
-                lim = t[1]
-                if len(t) > 2:
-                    pts = t[2]
-                else:
-                    pts = 10
+                # for t in ranges:
+                #     st = t[0]
+                #     lim = t[1]
+                #     if len(t) > 2:
+                #         pts = t[2]
+                #     else:
+                #         pts = 10
+                #
+                #     results = run_k_means2(start=st, limit=lim, get_ds=get_bach, npoints=pts)
+                #
+                #     max_idx = np.argmax(results[:, 0])
+                #     xdata = {'kmeans':f"max y:{pr_fl(results[max_idx, 0])} x:{int(results[max_idx, 1])}"}
+                #     make_fitness_plots(
+                #         title='Bach Harmony Kmeans Silhouette Scores', fn=get_plot_fn(f'k_means_1_bach_{st}_{lim}'), data={'kmeans': results},
+                #         x_label='k', y_label='Silh Scor', extra_data=xdata, zero_x_bnd=False, zero_y_bnd=False
+                #     )
 
-                results = run_k_means2(start=st, limit=lim, get_ds=get_bach, npoints=pts)
+        if GMMK in args:
+            Logs.set_log_file("GMM_Step_1")
+            if DS_1 in args:
+                ranges = [(2, 50, 49)]
+                for t in ranges:
+                    st = t[0]
+                    lim = t[1]
 
-                max_idx = np.argmax(results[:, 0])
-                xdata = {'kmeans':f"max y:{pr_fl(results[max_idx, 0])} x:{int(results[max_idx, 1])}"}
-                make_fitness_plots(
-                    title='Bach Harmony Kmeans Silhouette Scores', fn=get_plot_fn(f'k_means_1_bach_{st}_{lim}'), data={'kmeans': results},
-                    x_label='k', y_label='Silh Scor', extra_data=xdata, zero_x_bnd=False, zero_y_bnd=False
-                )
+                    if len(t) > 2:
+                        pts = t[2]
+                    else:
+                        pts = 10
 
-    if GMMK in args:
-        Logs.set_log_file('gmm_init_clustering')
-        if DS_1 in args:
-            ranges = [(2, 50, 49)]
-            for t in ranges:
-                st = t[0]
-                lim = t[1]
+                    results = run_gmm(start=st, limit=lim, get_ds=get_digits, npoints=pts)
 
-                if len(t) > 2:
-                    pts = t[2]
-                else:
-                    pts = 10
+                    max_idx = np.argmax(results[:, 0])
+                    xdata = {'gmm': f"max y:{pr_fl(results[max_idx, 0])} x:{int(results[max_idx, 1])}"}
+                    make_fitness_plots(
+                        title='Digits GMM Silhouette Scores', fn=get_plot_fn(f'gmm_1_digits_{st}_{lim}'),
+                        data={'gmm': results},
+                        x_label='k', y_label='Silh Score', extra_data=xdata
+                    )
 
-                results = run_gmm(start=st, limit=lim, get_ds=get_digits, npoints=pts)
+            if DS_2 in args:
+                print("Bach clustering")
+                # ranges = [(1400, 1500), (1501, 1600), (1601, 1700), (1701, 1800)]
+                # ranges = [(1500, 1519, 20), (1520, 1539, 20), (1540, 1559, 20), (1560, 1579, 20), (1580, 1599, 20)]
+                #ranges = [(2, 1000, 20), (1001, 2000, 20), (2001, 3000, 20), (3001, 4000, 20), (4001, 5000, 20), (5001, 6000, 20)]
+                ranges = [#(2, 1000, 5), (1001, 2000, 5), (2, 500, 50),
+                    #(501, 1000, 20), (1001, 1500, 20), (1501, 2000, 20)
+                     #(2000, 2500, 20), (1900, 2000, 101), (1800, 1900, 101)
+                    (2000, 2024, 25 ), (2025, 2049, 25 ), (2050, 2074, 25 ), (2075, 2099, 25 )
+                ]
+                for t in ranges:
+                    st = t[0]
+                    lim = t[1]
+                    if len(t) > 2:
+                        pts = t[2]
+                    else:
+                        pts = 10
 
-                max_idx = np.argmax(results[:, 0])
-                xdata = {'gmm': f"max y:{pr_fl(results[max_idx, 0])} x:{int(results[max_idx, 1])}"}
-                make_fitness_plots(
-                    title='Digits GMM Silhouette Scores', fn=get_plot_fn(f'gmm_1_digits_{st}_{lim}'),
-                    data={'gmm': results},
-                    x_label='k', y_label='Silh Score', extra_data=xdata
-                )
+                    results = run_gmm(start=st, limit=lim, get_ds=get_bach, npoints=pts)
 
-        if DS_2 in args:
-            print("Bach clustering")
-            # ranges = [(1400, 1500), (1501, 1600), (1601, 1700), (1701, 1800)]
-            # ranges = [(1500, 1519, 20), (1520, 1539, 20), (1540, 1559, 20), (1560, 1579, 20), (1580, 1599, 20)]
-            #ranges = [(2, 1000, 20), (1001, 2000, 20), (2001, 3000, 20), (3001, 4000, 20), (4001, 5000, 20), (5001, 6000, 20)]
-            ranges = [#(2, 1000, 5), (1001, 2000, 5), (2, 500, 50),
-                #(501, 1000, 20), (1001, 1500, 20), (1501, 2000, 20)
-                 #(2000, 2500, 20), (1900, 2000, 101), (1800, 1900, 101)
-                (2000, 2024, 25 ), (2025, 2049, 25 ), (2050, 2074, 25 ), (2075, 2099, 25 )
-            ]
-            for t in ranges:
-                st = t[0]
-                lim = t[1]
-                if len(t) > 2:
-                    pts = t[2]
-                else:
-                    pts = 10
+                    max_idx = np.argmax(results[:, 0])
+                    xdata = {'gmm': f"max y:{pr_fl(results[max_idx, 0])} x:{int(results[max_idx, 1])}"}
+                    make_fitness_plots(
+                        title='Bach Harmony Kmeans Silhouette Scores', fn=get_plot_fn(f'gmm_1_bach_{st}_{lim}'),
+                        data={'gmm': results},
+                        x_label='k', y_label='Silh Score', extra_data=xdata, zero_x_bnd=False, zero_y_bnd=False
+                    )
+    if STEP2 in args:
+        if PCAK in args:
+            if DS_1 in args:
+                run_pca_reduction(cluster_tag=KMEANSK, ds_tag=DS_1, get_ds=get_digits, cluster_func=run_gmm_clustering)
 
-                results = run_gmm(start=st, limit=lim, get_ds=get_bach, npoints=pts)
+            if DS_2 in args:
+                run_pca_reduction(cluster_tag=KMEANSK, ds_tag=DS_2, get_ds=get_bach, cluster_func=run_gmm_clustering)
 
-                max_idx = np.argmax(results[:, 0])
-                xdata = {'gmm': f"max y:{pr_fl(results[max_idx, 0])} x:{int(results[max_idx, 1])}"}
-                make_fitness_plots(
-                    title='Bach Harmony Kmeans Silhouette Scores', fn=get_plot_fn(f'gmm_1_bach_{st}_{lim}'),
-                    data={'gmm': results},
-                    x_label='k', y_label='Silh Score', extra_data=xdata, zero_x_bnd=False, zero_y_bnd=False
-                )
+        if GMMK in args:
+            if DS_1 in args:
+                run_pca_reduction(cluster_tag=GMMK, ds_tag=DS_1, get_ds=get_digits, cluster_func=run_gmm_clustering)
 
+            if DS_2 in args:
+                run_pca_reduction(cluster_tag=GMMK, ds_tag=DS_2, get_ds=get_bach, cluster_func=run_gmm_clustering)
 
-max_silh_km_bach = 1575
-max_silh_km_digits = 15
-max_silh_gmm_bach = 2056
-max_silh_gmm_digits = 17
+            # if DS_1 in args:
+            #     ds_x_reduced = run_reduction(
+            #         reduce_func=dr_pca, plot_func=pca_eval_plot, get_ds=get_digits,
+            #         fn=get_plot_fn('Step_2_PCA_digits')
+            #     )
+            #
+            #     get_digits_reduced = partial(get_data_stub, d=ds_x_reduced)
+            #     ranges = [(2, max_silh_km_digits + 1, 10)]
+            #     run_km_clustering(tag='digits_reduced', ranges=ranges, get_ds=get_digits_reduced)
+            #
+            # if DS_2 in args:
+            #     ds_x_reduced = run_reduction(
+            #         reduce_func=dr_pca, plot_func=pca_eval_plot, get_ds=get_bach,
+            #         fn=get_plot_fn('Step_2_PCA_bach')
+            #     )
+            #     get_bach_reduced = partial(get_data_stub, d=ds_x_reduced)
+            #     ranges = [(2, max_silh_km_bach + 1, 20)]
+            #     run_km_clustering(tag='Bach_reduced', ranges=ranges, get_ds=get_digits_reduced)
+            #
+            #     Logs.set_log_file("PCA_Step_2")
+            #     ds_x_reduced = run_reduction(
+            #         reduce_func=dr_pca, plot_func=pca_eval_plot, get_ds=get_digits,
+            #         fn=get_plot_fn('Step_2_PCA_digits')
+            #     )
+
 
 if __name__ == '__main__':
     import sys
     import datetime
     main(sys.argv[1:])
 
-    time_now = datetime.datetime.now().strftime("%m_%d_%H_%M")
+    time_now = datetime.datetime.now().strftime("%m/%d %H:%M")
     print(f"Finished execution at {time_now}")
     log("Finished execution")
 
