@@ -549,7 +549,7 @@ def get_digits():
     y_train_hot = one_hot.fit_transform(y_train.reshape(-1, 1)).todense()
     if TEST_MODE():
         #last = int(.1 * len(X_train_scaled))
-        last = 81
+        last = 250
         X_train_scaled = X_train_scaled[0:last]
         y_train_hot = y_train_hot[0:last]
 
@@ -575,7 +575,7 @@ def get_bach():
 
     if TEST_MODE():
         #last = int(.1 * len(X_train_scaled))
-        last = 81
+        last = 250
         X_train_scaled = X_train_scaled[0:last]
         y_train_hot = y_train_hot[0:last]
 
@@ -656,36 +656,90 @@ def gmm_score(X, k):
     return silhouette_score(X, label)
 
 
-def run_gmm(x_pts=None, get_ds=None):
-    import numpy as np
-    from sklearn.mixture import GaussianMixture as GMM
+# def run_gmm(x_pts=None, get_ds=None):
+#     import numpy as np
+#     from sklearn.mixture import GaussianMixture as GMM
+#
+#     X, y = get_ds[GETK]()
+#     tag = get_ds[TAGK]
+#
+#     instances = X.shape[0]
+#
+#     if x_pts is None:
+#         cl_list = list(range(2, X.shape[0])) #all instance
+#     else:
+#         cl_list = x_pts
+#
+#     print(f"Evaluting cluster sizes ({tag}): {cl_list}")
+#
+#     results = np.zeros((len(cl_list), 2))
+#
+#     for i, k in enumerate(cl_list):
+#         print(f'{k} centers')
+#         sc = gmm_score(X, k)
+#         results[i] = [sc, k]
+#
+#     return results
 
-    X, y = get_ds[GETK]()
-    tag = get_ds[TAGK]
 
-    instances = X.shape[0]
+def save_np(a, st=None, ds_tag=None, cl_tag=None, extra=None,  fn=None, ftype='.npy'):
+    a_fn = fn
+    if st is None:
+        st = cur_step()
+    if not fn:
+        fn_tag = f'{st}@{str(ds_tag)}@{str(cl_tag)}@{str(extra)}'
+        a_fn = get_plot_fn(fn_tag, ftype=ftype)
 
-    if x_pts is None:
-        cl_list = list(range(2, X.shape[0])) #all instance
-    else:
-        cl_list = x_pts
+    np.save(a_fn, a)
 
-    print(f"Evaluting cluster sizes ({tag}): {cl_list}")
 
+def kmeans_score(X, k):
+    from sklearn.cluster import KMeans
+    from sklearn.metrics import silhouette_score
+
+    kMean = KMeans(n_clusters=k)
+    kMean.fit(X)
+    label = kMean.predict(X)
+
+    return silhouette_score(X, label)
+
+
+def incr_scoring(X, cl_list, ds_tag=None, cl_tag=None, score_func= None, savepoint=100, skiplast=False):
     results = np.zeros((len(cl_list), 2))
+    visited = [False] * len(results)
 
     for i, k in enumerate(cl_list):
-        print(f'{k} centers')
-        sc = gmm_score(X, k)
-        results[i] = [sc, k]
+        if i == 0 or i % savepoint == 0:
+            print(f'{k} clusters')
+            if skiplast and i == len(cl_list) - 1:
+                pass
+            else:
+                sc = score_func(X, k)
+                results[i] = [sc, k]
+                visited[i] = True
+
+    set_np_array(max_cluster_scores, ds_tag, cl_tag, results) # will save to current step dictionary
+
+    for i, k in enumerate(cl_list):
+        print(f'{k} clusters')
+        if skiplast and i == len(cl_list) - 1:
+            pass
+        else:
+            if not visited[i]:
+                sc = score_func(X, k)
+                results[i] = [sc, k]
+                visited[i] = True
+
+        if i > 0 and i % savepoint == 0:
+            print("Savepoint")
+            save_np(max_cluster_scores, ds_tag=ds_tag, cl_tag=cl_tag)
+
+    set_np_array(max_cluster_scores, ds_tag, cl_tag, results)  # will save to current step dictionary
 
     return results
 
-
-def run_k_means2(x_pts=None, get_ds=None, skipLast=False):
+def run_cluster_scoring(x_pts=None, get_ds=None, cl_tag=None, score_func=None, skipLast=False, savepoint=100):
     import numpy as np
-    from sklearn.cluster import KMeans
-    from sklearn.metrics import silhouette_score
 
     X, y = get_ds[GETK]()
     tag = get_ds[TAGK]
@@ -698,19 +752,12 @@ def run_k_means2(x_pts=None, get_ds=None, skipLast=False):
         cl_list = x_pts
 
     print(f"Evaluting cluster sizes: {cl_list}")
-    results = np.zeros((len(cl_list), 2))
-
-    for i, k in enumerate(cl_list):
-        print(f'{k} clusters')
-        if skipLast and i == len(cl_list) - 1:
-            pass
-        else:
-            KMean = KMeans(n_clusters=k)
-            KMean.fit(X)
-            label = KMean.predict(X)
-            results[i] = [silhouette_score(X, label), k]
+    results = incr_scoring(X, cl_list, ds_tag=tag, cl_tag= cl_tag, score_func=score_func)
 
     return results
+
+
+
 
 def dr_ica(X,y, ds_tag=None, do_whitening=True):
     from sklearn import decomposition
@@ -911,7 +958,7 @@ def set_series(
 def run_km_clustering(title=None, ranges=None, get_ds=None, cl_tag=KMEANSK):
 
     #starts, points, limits = format_ranges(ranges)
-    results = run_k_means2(x_pts=ranges, get_ds=get_ds)
+    results = run_cluster_scoring(x_pts=ranges, get_ds=get_ds, cl_tag=cl_tag, score_func=kmeans_score)
     ds_tag = get_ds[TAGK]
 
     set_np_array(max_cluster_scores, ds_tag, cl_tag, results)
@@ -952,7 +999,7 @@ def run_km_clustering(title=None, ranges=None, get_ds=None, cl_tag=KMEANSK):
 def run_gmm_clustering(title=None, get_ds=None, ranges=None, cl_tag=GMMK):
 
     #starts, points, limits = format_ranges(ranges)
-    results = run_gmm(x_pts=ranges, get_ds=get_ds)
+    results = run_cluster_scoring(x_pts=ranges, get_ds=get_ds, cl_tag=cl_tag, score_func=gmm_score)
 
     st = cur_step()
     ds_tag = get_ds[TAGK]
@@ -1000,6 +1047,8 @@ def get_step1_range(ds_tag=None, cluster_tag=None):
 
     max_idx = max_cluster_scores[STEP1][ds_tag][cluster_tag][STEP_RES]['max_idx']
     step1_series = get_np_array(max_cluster_scores, ds_tag, cluster_tag, st=STEP1)
+    max_x = step1_series[max_idx, 1]
+    #max_y = step1_series[max_idx:0]
 
     start = 2
     last_pt = int(1.1 * max_x)
@@ -1007,14 +1056,14 @@ def get_step1_range(ds_tag=None, cluster_tag=None):
     if last_pt - start < 20:
         ret_rng = list(range(2, last_pt + 1))
     else:
-        r1 = make_x_points(starts=[start], limits= [last_pt], points=[15])
+        r1 = make_x_points(starts=[start], limits=[last_pt], points=[20])
         r1 = set(r1)
         r1 = r1.union({max_x})
         ret_rng = list(r1)
         ret_rng.sort()
         assert(max_x in ret_rng)
 
-    return [ret_rng], max_x
+    return [ret_rng], max_idx
 
 def run_reduction(
     get_ds=None, cluster_info=None, dr_func=None,
