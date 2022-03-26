@@ -1,9 +1,4 @@
-# This is a sample Python script.
 
-# Press Shift+F10 to execute it or replace it with your code.
-# Press Double Shift to search everywhere for classes, files, tool windows, actions, and settings.
-
-#import mlrose_hiive as mlr
 import numpy as np
 import matplotlib.pyplot as plt
 from sklearn.mixture import GaussianMixture as GMM
@@ -19,6 +14,8 @@ class Logs():
         Logs.cur_log_file = Logs.get_log_fn(tag=tag, src_level=src_level)
 
     def get_log_fn(tag=None, src_level=-2):
+        if Logs.cur_log_file is None and tag is None:
+            tag = "LOG_default"
 
         if tag is None:
             return Logs.cur_log_file
@@ -40,6 +37,16 @@ class Logs():
 
         log_fn = os.sep.join([Logs.log_dir, day, fn])
         return log_fn
+
+def cur_step(st=None, store=[]):
+    if st is not None:
+        if not store:
+            store.append(st)
+        else:
+            store[0] = st
+
+    return store[0]
+
 
 def log(s=None, d=None, src_level=-2):
     def col_print(d, cols=4, proc=lambda i, x, d:str(x)):
@@ -68,8 +75,14 @@ def log(s=None, d=None, src_level=-2):
     lineNum = recs[1][0].f_lineno
     where = os.path.basename(path)
     where += ":" + str(lineNum)
+    if not Logs.log_time_tag:
+        Logs.log_time_tag = datetime.datetime.now().strftime("%m_%d_%H_%M")
+
     when = Logs.log_time_tag + ": "
     when += where + "-"
+
+    if log_fn is None:
+        log_fn = Logs.get_log_fn()
 
     with open(log_fn, 'a+') as log_file:
         log_file.write(when + s + '\n')
@@ -138,7 +151,7 @@ def get_day_prefix(now_str=None):
     time_tag_parts = now_str.split('_')
     return "_".join(time_tag_parts[:2])
 
-def get_plot_fn(tag=None, root_path='./plots'):
+def get_plot_fn(tag=None, root_path='./plots', ftype='.png'):
     import datetime, os
     time_tag = datetime.datetime.now().strftime("%m_%d_%H_%M")
     day = get_day_prefix(time_tag)
@@ -146,8 +159,7 @@ def get_plot_fn(tag=None, root_path='./plots'):
     if not os.path.exists(target):
         os.makedirs(target)
 
-
-    fn = tag + '_' + time_tag + ".png"
+    fn = tag + '_' + time_tag + ftype
     full_fn = os.sep.join([root_path, day, fn])
 
     no_overwrite = 0
@@ -226,10 +238,10 @@ BFCK = 'best_fc_curve'
 def get_plot_title(pr, dm, dim):
     return f"{pr}-{dm} size:{dim}"
 
-def make_fitness_plots(
+def make_plot(
         title=None,  data=None, fn=None, rows=1, extra_data=None,
         x_label="iterations", y_label="fitness score", trunc_converged=True,
-        zero_x_bnd=False, zero_y_bnd=False
+        zero_x_bnd=False, zero_y_bnd=False, ebars=False
     ):
 
     plt.close()
@@ -300,7 +312,11 @@ def make_fitness_plots(
         sylen = len(syms)
         pt = syms[i%sylen]
         clen = len(colors)
-        subplot_1.plot(cur_x, cur_y, color=colors[i%clen], marker=pt, linestyle='solid', label=lbl)
+        if not ebars:
+            subplot_1.plot(cur_x, cur_y, color=colors[i%clen], marker=pt, linestyle='solid', label=lbl)
+        else:
+            yerr = np.std(cur_y)
+            subplot_1.errorbar(cur_x, cur_y, yerr=yerr, color=colors[i % clen], marker=pt, linestyle='solid', label=lbl)
 
     subplot_1.legend(loc="lower right")
 
@@ -310,108 +326,8 @@ def make_fitness_plots(
     plt.savefig(fn)
     plt.show()
 
-def get_mmc_args(curve=True, pop_size=None, keep_pct=None):
-    #problem, pop_size = 200, keep_pct = 0.2, max_attempts = 10,
-    # max_iters = inf, curve = False, random_state = None, fast_mimic = False
-    #args = mlr.DiscreteOpt(length=8, fitness_fn=fitness, maximize=True, max_val=8)
-    kwa = {
-        'pop_size':200, 'keep_pct': 0.2,
-        'max_attempts': 10,
-        'max_iters': 1000, 'curve': curve,
-        'random_state': 1
-    }
-    if not pop_size:
-        pass
-    else:
-        kwa['pop_size'] = pop_size
-
-    if not keep_pct:
-        pass
-    else:
-        kwa['keep_pct'] = keep_pct
-
-    return kwa
 
 
-def get_hc_args(curve=True):
-
-    kwa = {
-        'restarts': 0,
-        'max_iters': 1000, 'curve': curve,
-        'random_state': 1
-    }
-    #problem, max_iters = inf, restarts = 0, init_state = None, curve = False, random_state = None
-    return kwa
-
-def get_ga_args(curve=True, mutation_prob=None, pop_size=None):
-
-    kwa = {
-        'pop_size':200,
-        'mutation_prob':0.1,
-        'max_attempts': 100, 'max_iters': 1000, 'curve': curve,
-        'random_state': 1
-    }
-    if not pop_size:
-        pass
-    else:
-        kwa['pop_size'] = pop_size
-
-    if not mutation_prob:
-        pass
-    else:
-        kwa['mutation_prob'] = mutation_prob
-
-    return kwa
-
-
-def get_rhc_args(curve=True):
-
-    kwa = {
-        'max_attempts': 1000, 'max_iters': 1000, 'curve': curve,
-        'init_state': None, 'random_state': 1
-    }
-    return kwa
-
-def  get_sa_args(curve=True, schedule=None):
-    kwa = {'schedule': mlr.ExpDecay(),
-        'max_attempts': 100, 'max_iters': 1000, 'curve': curve,
-        'init_state': None, 'random_state': 1
-    }
-    if not schedule:
-        pass
-    else:
-        kwa['schedule']=schedule()
-
-    return kwa
-
-DISCR= 'discrete'
-CONT= 'cont'
-def get_prob_obj(dm_tag=None, fit_tag=None, dim=None):
-
-    max_value = 2
-    # if dm_tag == DISCR:
-    #     if fit_tag == KNSACK:
-    #         w, v = get_knapsack_wvs(length=dim)
-    #     elif fit_tag == MXK:
-    #         e = get_mxk_edges(length=dim)
-    #     elif fit_tag == TSP:
-    #         assert(False)
-    #         c, d = get_tsp_cd()
-    #         fitness_coords = mlr.TravellingSales(coords=c)
-    #         return mlr.TSPOpt(length=length, fitness_fn=fitness_coords, maximize=False)
-
-    problem = mlr.DiscreteOpt(
-        length=dim, fitness_fn=get_fitness(fit_tag, dim=dim),
-        maximize=True, max_val=max_value
-    )
-
-    # elif dm_tag == CONT:
-    #     assert(False)
-    #     if fit_tag in [QUEENS, KNSACK, MXK, FLFLOP, F4PEAKS, S6PEAKS, CONT_PEAKES, TSP]:
-    #         return None
-    #     problem = mlr.ContinuousOpt(length=8, fitness_fn=get_fitness(fit_tag), maximize=True, max_val=8)
-
-    return problem
 
 DS_1 = 'digits'
 DS_2 = 'Bach'
@@ -567,19 +483,53 @@ max_silh_km_digits = 15
 max_silh_gmm_bach = 2056
 max_silh_gmm_digits = 17
 
-KMEANSK = 'k-means'
+KMEANSK = 'kmeans'
 GMMK = 'gmm'
 
+STEP1 = 's1'
+STEP2 = 's2'
+STEP3 = 's3'
+STEP4 = 's4'
+STEP5 = 's5'
+
 max_cluster_scores = {
-    DS_1: {
-        KMEANSK: max_silh_km_digits,
-        GMMK: max_silh_gmm_digits
+
+    STEP1:{
+        DS_1: {
+            KMEANSK: {'max': max_silh_km_digits} ,
+            GMMK: {'max': max_silh_gmm_digits}
+        },
+        DS_2: {
+            KMEANSK: {'max': max_silh_km_bach},
+            GMMK: {'max': max_silh_gmm_bach}
+        }
     },
-    DS_2: {
-        KMEANSK: max_silh_km_bach,
-        GMMK: max_silh_gmm_bach
+    STEP2:{
+        DS_1: {
+            KMEANSK: {'max': -1},
+            GMMK: {'max': -1}
+        },
+        DS_2: {
+            KMEANSK: {'max': -1},
+            GMMK: {'max': -1}
+        }
     }
+
 }
+
+def TEST_MODE(val=None, store=[]):
+    if not store:
+        if not val:
+            store.append(False)
+        else:
+            store.append(val)
+
+    if not val:
+        pass
+    else:
+        store[0] = val
+
+    return store[0]
 
 def get_digits():
     from sklearn.preprocessing import MinMaxScaler
@@ -597,6 +547,12 @@ def get_digits():
     # One hot encode target values
     one_hot = OneHotEncoder()
     y_train_hot = one_hot.fit_transform(y_train.reshape(-1, 1)).todense()
+    if TEST_MODE():
+        #last = int(.1 * len(X_train_scaled))
+        last = 81
+        X_train_scaled = X_train_scaled[0:last]
+        y_train_hot = y_train_hot[0:last]
+
     return X_train_scaled, y_train_hot
 
 
@@ -616,72 +572,131 @@ def get_bach():
     # One hot encode target values
     one_hot = OneHotEncoder()
     y_train_hot = one_hot.fit_transform(y_train.reshape(-1, 1)).todense()
+
+    if TEST_MODE():
+        #last = int(.1 * len(X_train_scaled))
+        last = 81
+        X_train_scaled = X_train_scaled[0:last]
+        y_train_hot = y_train_hot[0:last]
+
     return X_train_scaled, y_train_hot
 
+GETK= 'get_func'
+TAGK = 'tag'
+GET_DIGITS ={
+    GETK:get_digits
+}
 
-def run_gmm(k=2, get_ds=None, start=2, npoints=10, limit=None):
-    # code based on https://github.com/vlavorini/ClusterCardinality/blob/master/Cluster%20Cardinality.ipynb
-    # n_clusters = np.arange(2, 20)
-    # sils = []
-    # sils_err = []
-    # iterations = 20
-    # for n in n_clusters:
-    #     tmp_sil = []
-    #     for _ in range(iterations):
-    #         gmm = GMM(n, n_init=2).fit(embeddings)
-    #         labels = gmm.predict(embeddings)
-    #         sil = metrics.silhouette_score(embeddings, labels, metric='euclidean')
-    #         tmp_sil.append(sil)
-    #     val = np.mean(SelBest(np.array(tmp_sil), int(iterations / 5)))
-    #     err = np.std(tmp_sil)
-    #     sils.append(val)
-    #     sils_err.append(err)
+GET_BACH ={
+    GETK:get_bach
+}
 
-    import numpy as np
-    from sklearn.mixture import GaussianMixture as GMM
+datasets_info = {
+    DS_1: GET_DIGITS,
+    DS_2: GET_BACH
+}
+
+def make_x_points(starts=None, points=None, limits=None):
+    assert (len(starts) == len(points))
+    assert (len(starts) == len(limits))
+
+    res_list = []
+    regions = len(starts)
+    for i, s in enumerate(starts):
+        cur_start = s
+        cur_points = points[i]
+
+        #validate cur_points, make sure cur_points not too large
+        if i == regions - 1:  # last
+            if limits[i] is not None:
+                cur_points = min(cur_points, limits[i] - cur_start + 1)
+        else:
+            next_start = starts[i + 1]
+            temp_limit = next_start - 1
+            cur_points = min(cur_points, temp_limit - cur_start + 1)
+
+        if limits[i] is None:
+            if i == regions - 1:  # last
+                cur_limit = cur_start + cur_points - 1
+            else:
+                cur_limit = starts[i + 1] - 1
+        else:
+            cur_limit = limits[i]
+
+        step = int((cur_limit - cur_start) / (cur_points - 1))
+        assert (step > 0)
+        cur_list = list(range(cur_start, cur_limit + 1, step))
+        res_list += cur_list
+
+    return res_list
+
+def validate_limit_list(start, limit, instances):
+    if limit is None:
+        limit = [None for x in start]
+        limit[-1] = instances
+    elif len(limit) == 1:
+        last_val = limit[0]
+        last_pos = len(start) - 1
+        limit = [None if i != last_pos else last_val for i in range(len(start)) ]
+    elif len(start) != len(limit):
+        assert(False)
+
+    if limit[-1] is None:
+        limit[-1] = instances
+
+    return limit
+
+def gmm_score(X, k):
     from sklearn.metrics import silhouette_score
 
-    X, y = get_ds()
+    gmm_obj = GMM(k)
+    gmm_obj.fit(X)
+    label = gmm_obj.predict(X)
+
+    return silhouette_score(X, label)
+
+
+def run_gmm(x_pts=None, get_ds=None):
+    import numpy as np
+    from sklearn.mixture import GaussianMixture as GMM
+
+    X, y = get_ds[GETK]()
+    tag = get_ds[TAGK]
 
     instances = X.shape[0]
 
-    if not limit:
-        limit = instances
+    if x_pts is None:
+        cl_list = list(range(2, X.shape[0])) #all instance
+    else:
+        cl_list = x_pts
 
-    step = int((limit - start) / (npoints - 1))
+    print(f"Evaluting cluster sizes ({tag}): {cl_list}")
 
-    end = 1 + start + (npoints - 1) * step
-    cl_list = list(range(start, end, step))
-    print(f"Evaluting cluster sizes: {cl_list}")
     results = np.zeros((len(cl_list), 2))
 
     for i, k in enumerate(cl_list):
         print(f'{k} centers')
-
-        gmm_obj = GMM(k)
-        gmm_obj.fit(X)
-        label = gmm_obj.predict(X)
-        results[i] = [silhouette_score(X, label), k]
+        sc = gmm_score(X, k)
+        results[i] = [sc, k]
 
     return results
 
 
-def run_k_means2(k=2, get_ds=None, start=2, npoints=10, limit=None, skipLast=False):
+def run_k_means2(x_pts=None, get_ds=None, skipLast=False):
     import numpy as np
     from sklearn.cluster import KMeans
     from sklearn.metrics import silhouette_score
 
-    X, y = get_ds()
+    X, y = get_ds[GETK]()
+    tag = get_ds[TAGK]
 
     instances = X.shape[0]
+    #limit = validate_limit_list(start, limit, instances)
+    if x_pts is None:
+        cl_list = list(range(2, X.shape[0])) #all instance
+    else:
+        cl_list = x_pts
 
-    if not limit:
-        limit = instances
-
-    step = int((limit - start)/(npoints - 1))
-
-    end = 1 + start + (npoints - 1) * step
-    cl_list = list(range(start, end, step))
     print(f"Evaluting cluster sizes: {cl_list}")
     results = np.zeros((len(cl_list), 2))
 
@@ -697,15 +712,117 @@ def run_k_means2(k=2, get_ds=None, start=2, npoints=10, limit=None, skipLast=Fal
 
     return results
 
-def dr_pca(X,y):
+def dr_ica(X,y, ds_tag=None, do_whitening=True):
+    from sklearn import decomposition
+    from scipy.stats import norm
+    from scipy.stats import kurtosis
+
+    space_dim = X.shape[1]
+    kur_results = np.zeros((space_dim, 2))
+    for i in range(space_dim):
+        num_components = i + 1
+        #if num_components == space_dim:
+        #    continue  # the max number of components tends to generate errors, evaluating not useful
+        if num_components == 64:
+            hook = True
+        print(f"Evaluating {num_components} ICA components")
+        ica = decomposition.FastICA(n_components=num_components, whiten=do_whitening,
+            max_iter=800)
+
+        try:
+            ica.fit(X)
+        except Exception as ex:
+            hook = True
+            raise
+
+        A = ica.components_
+        tally = np.zeros(A.shape[0])
+
+        for ii, v in enumerate(ica.components_):
+            one_axis = np.zeros(A.shape)
+            one_axis[ii] = A[ii]
+            proj = np.dot(X, one_axis.T)
+            proj = proj[:, ii]
+            kur_score = kurtosis(proj)
+            tally[ii] = np.abs(kur_score)
+
+        kur_results[i] = [np.min(tally), num_components]
+
+    #kur_results = np.abs(kur_results)
+    max_idx = np.argmax(kur_results[:,0])
+    plot_tag = 'kur'
+    data = {plot_tag: kur_results}
+    xdata = {plot_tag: f"max y:{pr_fl(kur_results[max_idx, 0])} x:{int(kur_results[max_idx, 1])}"}
+    max_y = kur_results[max_idx, 0]
+    max_red = kur_results[max_idx, 1]/space_dim
+    max_vals = np.repeat(max_y, len(kur_results))
+    std = np.std(max_vals - kur_results[:, 0])
+    thresh = (max_y - std)/ max_y
+
+    #norm_fact = max_y/max_red
+    def score2(x, y,  thresh, max_store=[]):
+
+        cur_sc_ratio = y/max_y
+        cur_red_ratio = (x/space_dim)/max_red
+        score2 = cur_sc_ratio/cur_red_ratio * max_y
+
+        if not max_store:
+            max_store.append(score2)
+
+        if cur_sc_ratio > thresh and x > .4 * space_dim: # ignore larger reductions
+            if score2 > max_store[0]:
+                max_store[0] = score2
+        else:
+            score2 = .9 * max_store[0]
+
+        return score2 # scale for graph
+
+    #effectiveness_score
+    test = score2(kur_results[max_idx, 1], kur_results[max_idx, 0], thresh)
+    eff_score = [score2(r[1], r[0], thresh) for r in kur_results[0:max_idx + 1]]
+    eff_score = np.array(eff_score)
+    eff_score = np.column_stack((eff_score, kur_results[:,1][0:max_idx + 1]))
+    data['eff_score'] = eff_score
+    max_idx = np.argmax(eff_score[:, 0])
+    highest_eff_score = max_idx
+    xdata['eff_score'] = f"max y:{pr_fl(eff_score[max_idx, 0])} x:{int(eff_score[max_idx, 1])}"
+
+    make_plot(
+        title=f"Kurtosis Score for ICA components ({ds_tag})", data=data, x_label="ICA component",
+        y_label="Kur Score", extra_data=xdata, fn=get_plot_fn(f'ICA_exp_plot_{ds_tag}'),
+    )
+
+    num_components = int(kur_results[highest_eff_score, 1])
+    ica = decomposition.FastICA(n_components=num_components, whiten=do_whitening)
+
+    return ica, ica.fit_transform(X)
+
+ICAK = 'ica'
+DR_ICA={
+    GETK:dr_ica
+}
+
+def dr_pca(X,y, ds_tag=None):
     from sklearn import decomposition
     pca = decomposition.PCA(n_components=.95)
     pca.fit(X)
 
     return pca, pca.transform(X)
 
+DR_PCA={
+    GETK:dr_pca
+}
 
-def pca_eval_plot(estimator=None, fn=None):
+
+def ica_eval_plot(estimator=None, fn=None, ds_tag=None):
+    import matplotlib.pyplot as plt
+    from scipy.stats import kurtosis
+
+    ica = estimator
+    # for i, v in enumerate(ica.components_):
+
+
+def pca_eval_plot(estimator=None, fn=None, ds_tag=None):
     import matplotlib.pyplot as plt
     pca = estimator
     plt.rcParams["figure.figsize"] = (12, 6)
@@ -732,220 +849,471 @@ def pca_eval_plot(estimator=None, fn=None):
     plt.savefig(fn)
     plt.show()
 
-def run_reduction(reduce_func=None, plot_func=None, get_ds=None, fn=None):
+PCAK = 'pca'
+
+EVALPLOTK = 'evp'
+DRFUNCK = 'drfunc'
+REDK = 'redmeth'
+
+DR_TAGS = [PCAK, ICAK]
+dim_reduce_info = {
+    PCAK: {DRFUNCK:dr_pca, EVALPLOTK:pca_eval_plot},
+    ICAK: {DRFUNCK:dr_ica, EVALPLOTK:ica_eval_plot}
+}
+
+def run_reduction_2(reduce_func=None, plot_func=None, get_ds=None, fn=None):
     import numpy as np
     from sklearn.cluster import KMeans
     from sklearn.metrics import silhouette_score
 
-    X, y = get_ds()
+    X, y = get_ds[GETK]()
+    tag = get_ds[TAGK]
 
     instances = X.shape[0]
-
-    estimator, reduced_x = reduce_func(X, y)
+    drfunc = reduce_func[DRFUNCK]
+    estimator, reduced_x = drfunc(X, y, ds_tag=tag)
     #eval plots
-    plot_func(estimator=estimator, fn=fn)
+    plot_func(estimator=estimator, fn=fn, ds_tag=tag)
 
-    return X
+    return reduced_x
 
+STEP_RES = "_STEP_RESULTS"
 
-
-STEP1 = 's1'
-STEP2 = 's2'
-STEP3 = 's3'
-STEP4 = 's4'
-STEP5 = 's5'
-
-
-PCAK = 'pca'
-ICAK = 'ica'
-
-
-def run_km_clustering(tag, ranges=None, get_ds=None):
-    #ranges = [(2, 42)]
+def format_ranges(ranges):
+    starts = []
+    limits = []
+    points = []
     for t in ranges:
         st = t[0]
         lim = t[1]
+        starts.append(st)
+        limits.append(lim)
         if len(t) > 2:
             pts = t[2]
         else:
             pts = 10
 
-        results = run_k_means2(start=st, limit=lim, get_ds=get_ds, npoints=pts)
+        points.append(pts)
 
-        max_idx = np.argmax(results[:, 0])
-        plot_tag = 'kmeans'
-        xdata = {plot_tag: f"max y:{pr_fl(results[max_idx, 0])} x:{int(results[max_idx, 1])}"}
-        make_fitness_plots(
-            title=f'{tag} Kmeans Silhouette Scores', fn=get_plot_fn(f'k_means_{tag}_{st}_{lim}'),
-            data={plot_tag: results},
-            x_label='k', y_label='Silh Scor', extra_data=xdata
-        )
+    return starts, points, limits
 
-def run_gmm_clustering(tag, ranges=None, get_ds=None):
-    #ranges = [(2, 42)]
-    for t in ranges:
-        st = t[0]
-        lim = t[1]
-        if len(t) > 2:
-            pts = t[2]
-        else:
-            pts = 10
 
-        results = run_gmm(start=st, limit=lim, get_ds=get_bach, npoints=pts)
+def set_series(
+    data, xdata, ptag=None,
+    st=None, ds_tag=None, cl_tag=None
+):
+    cur_s = get_np_array(max_cluster_scores, ds_tag, cl_tag, st=st)
+    max_idx = np.argmax(cur_s[:, 0])
+    xdata[ptag] = f"max y:{pr_fl(cur_s[max_idx, 0])} x:{int(cur_s[max_idx, 1])}"
+    data[ptag] = cur_s
 
-        max_idx = np.argmax(results[:, 0])
-        plot_tag = 'gmm'
-        xdata = {plot_tag: f"max y:{pr_fl(results[max_idx, 0])} x:{int(results[max_idx, 1])}"}
-        make_fitness_plots(
-            title=f'{tag} GMM Silhouette Scores', fn=get_plot_fn(f'gmm_{tag}_{st}_{lim}'),
-            data={plot_tag: results},
-            x_label='k', y_label='Silh Score', extra_data=xdata, zero_x_bnd=False, zero_y_bnd=False
-        )
 
-def run_pca_reduction(cluster_tag=None, ds_tag=None, get_ds=None, cluster_func=None):
+def run_km_clustering(title=None, ranges=None, get_ds=None, cl_tag=KMEANSK):
+
+    #starts, points, limits = format_ranges(ranges)
+    results = run_k_means2(x_pts=ranges, get_ds=get_ds)
+    ds_tag = get_ds[TAGK]
+
+    set_np_array(max_cluster_scores, ds_tag, cl_tag, results)
+
+    data = {}
+    xdata = {}
+
+    st = cur_step()
+    if st == STEP2:
+        ptag = st + ' (reduced)'
+        set_series(data, xdata, ptag=ptag, st=STEP2, ds_tag=ds_tag, cl_tag=cl_tag)
+        set_series(data, xdata, ptag=STEP1, st=STEP1, ds_tag=ds_tag, cl_tag=cl_tag)
+    elif st == STEP1:
+        ptag = st
+        set_series(data, xdata, ptag=ptag, st=STEP1, ds_tag=ds_tag, cl_tag=cl_tag)
+
+    if ranges is None:
+        range_text = "fullr"
+    else:
+        start = ranges[0][0]
+        lim = ranges[0][-1]
+        range_text = f'{start}-{lim}'
+
+
+    ds_txt = ds_tag
+    if REDK in get_ds:
+        ds_txt = f'{ds_txt}_{get_ds[REDK]}'
+
+    make_plot(
+        title=title, fn=get_plot_fn(f'{cl_tag}_{ds_txt}_{st}_{range_text}'),
+        data=data,
+        x_label='k', y_label='Silh Scor', extra_data=xdata
+    )
+
+    return results
+
+
+def run_gmm_clustering(title=None, get_ds=None, ranges=None, cl_tag=GMMK):
+
+    #starts, points, limits = format_ranges(ranges)
+    results = run_gmm(x_pts=ranges, get_ds=get_ds)
+
+    st = cur_step()
+    ds_tag = get_ds[TAGK]
+    set_np_array(max_cluster_scores, ds_tag, cl_tag, results)
+    title = f'{ds_tag} {cl_tag} Silhouette Scores'
+
+    data = {}
+    xdata = {}
+
+
+    if st == STEP2:
+        ptag = st + ' (reduced)'
+        set_series(data, xdata, ptag=ptag, st=STEP2, ds_tag=ds_tag, cl_tag=cl_tag)
+        set_series(data, xdata, ptag=STEP1, st=STEP1, ds_tag=ds_tag, cl_tag=cl_tag)
+    elif st == STEP1:
+        ptag = st
+        set_series(data, xdata, ptag=ptag, st=STEP1, ds_tag=ds_tag, cl_tag=cl_tag)
+
+    start = starts[0]
+    lim = limits[-1]
+
+    make_plot(
+        title=title, fn=get_plot_fn(f'{cl_tag}_{ds_tag}_{st}_{start}_{lim}'),
+        data=data,
+        x_label='k', y_label='Silh Scor', extra_data=xdata
+    )
+    return results
+
+KM_CLUSTERING = {
+    GETK: run_km_clustering,
+}
+GMM_CLUSTERING = {
+    GETK: run_gmm_clustering
+}
+
+CLUSTERING_TAGS = [KMEANSK, GMMK]
+
+clustering_info = {
+    KMEANSK: KM_CLUSTERING,
+    GMMK: GMM_CLUSTERING
+}
+
+
+def get_step1_range(ds_tag=None, cluster_tag=None):
+
+    max_idx = max_cluster_scores[STEP1][ds_tag][cluster_tag][STEP_RES]['max_idx']
+    step1_series = get_np_array(max_cluster_scores, ds_tag, cluster_tag, st=STEP1)
+
+    start = 2
+    last_pt = int(1.1 * max_x)
+    pts = last_pt - start + 1
+    if last_pt - start < 20:
+        ret_rng = list(range(2, last_pt + 1))
+    else:
+        r1 = make_x_points(starts=[start], limits= [last_pt], points=[15])
+        r1 = set(r1)
+        r1 = r1.union({max_x})
+        ret_rng = list(r1)
+        ret_rng.sort()
+        assert(max_x in ret_rng)
+
+    return [ret_rng], max_x
+
+def run_reduction(
+    get_ds=None, cluster_info=None, dr_func=None,
+    plot_func=None
+):
     def get_data_stub(d=None):
         return d, None
 
-    Logs.set_log_file("PCA_Step_2")
-
-    ds_x_reduced = run_reduction(
-        reduce_func=dr_pca, plot_func=pca_eval_plot, get_ds=get_ds,
+    ds_tag = get_ds[TAGK]
+    dr_tag = dr_func[TAGK]
+    ds_x_reduced = run_reduction_2(
+        reduce_func=dr_func, plot_func=plot_func, get_ds=get_ds,
         fn=get_plot_fn(f'Step_2_PCA_{ds_tag}')
     )
 
     get_reduced = partial(get_data_stub, d=ds_x_reduced)
-    ub = max_cluster_scores[ds_tag][cluster_tag] + 1
-    ranges = [(2, ub, 10)]
-    cluster_func(tag=f'{ds_tag}_reduced', ranges=ranges, get_ds=get_reduced)
+    GetReduced = {
+        TAGK: get_ds[TAGK], GETK: get_reduced, REDK: dr_func[TAGK]
+    }
+    cl_tag = cluster_info[TAGK]
+    cluster_func = cluster_info[GETK]
+    ranges, s1_max = get_step1_range(ds_tag=ds_tag, cluster_tag=cl_tag)
+    title = f'{ds_tag} {cl_tag} Silhouette Scores\nred. by {dr_tag} dim={ds_x_reduced.shape[1]}, s1 xmax = {s1_max}'
+    cluster_func(title=title, ranges=ranges, get_ds=GetReduced)
 
+def set_np_array(info, k1, k2, a, st=None): # ds = k1, k2 = CL METHOD
+
+    if st is None:
+        st = cur_step()
+
+    if k1 not in info[st]:
+        info[st][k1] = {}
+
+    if k2 not in info[st][k1]:
+        info[st][k1][k2] = {}
+
+    if STEP_RES not in info[st][k1][k2]:
+        info[st][k1][k2][STEP_RES] = {}
+
+    cur_d = info[st][k1][k2][STEP_RES]
+    if 'a' not in cur_d:
+        old_a = None
+    else:
+        old_a = np.array(cur_d['a'])
+
+    ba = old_a == a
+    import os
+    if not ba.all() or 'serialized' not in cur_d or not os.path.exists(cur_d['serialized']):
+
+        if 'serialized' not in cur_d or not os.path.exists(cur_d['serialized']):
+            a_fn = get_plot_fn(tag=f'saved_npa_{st}_{k1}_{k2}', ftype='.npy')
+        else:
+            a_fn = cur_d['serialized']
+
+        max_idx = np.argmax(a[:,0])
+        cur_d['max_idx']= int(max_idx)
+        cur_d['a'] = a.tolist()
+        np.save(a_fn, a)
+        cur_d['serialized'] = a_fn
+
+    save_cluster_scores(info)
+    return a
+
+def get_np_array(info, k1, k2, st=None):
+    if st is None:
+        st = cur_step()
+
+    if k1 not in info[st] or k2 not in info[st][k1]:
+        hook = True
+
+    assert (k1 in info[st] and k2 in info[st][k1])
+    assert(STEP_RES in info[st][k1][k2])
+    cur_d = info[st][k1][k2][STEP_RES]
+    a = None
+    if 'serialized' in cur_d:
+        a_fn = cur_d["serialized"]
+        a = np.load(a_fn)
+        #assert ((np.array(cur_d['a']) == a).all())
+        cur_d['a'] = a.tolist()
+
+    return a
+
+def save_cluster_scores(scores, fn = './max_cluster_scores.json'):
+    import json
+
+    with open(fn, 'w') as jfp:
+        json.dump(scores, jfp)
+
+def read_cluster_scores(scores, fn='./max_cluster_scores.json'):
+    import json
+    with open(fn, 'r') as jfp:
+        scores_pickled = json.load(jfp)
+
+    src = scores_pickled
+    targ = scores
+    for k0 in [STEP1, STEP2]:
+        keys = list(src[k0])
+        for k1 in keys:
+            for k2 in src[k0][k1]:
+                cur_d = src[k0][k1][k2]
+                if STEP_RES in cur_d:
+                    a_fn = cur_d[STEP_RES]['serialized']
+                    read_a = get_np_array(src, k1, k2, st=k0)
+                    cur_d[STEP_RES]['safe_a'] = read_a.tolist()
+
+                cur_targ = targ[k0][k1][k2]
+                for k3 in cur_d:
+                    new = cur_d[k3]
+                    if k3 in cur_targ:
+                        old = targ[k0][k1][k2][k3]
+                    else:
+                        old = None
+                        cur_targ[k3] = None
+
+                    if old != new:
+                        print(f'updating {k0}-{k1}-{k2}-{k3}: {old} => {new}')
+                        cur_targ[k3] = new
+                    else:
+                        print(f'{k0}-{k1}-{k2}-{k3}: original == new')
 
 def main(args):
 
+    if 'test' in args:
+        TEST_MODE(val=True)
+
+    if 'no_reload' not in args:
+        read_cluster_scores(max_cluster_scores)
+
+    if 'INIT' in args:
+        get_ds = datasets_info[DS_2]
+        get_ds[TAGK] = GMMK
+
+        ds = get_ds[GETK]
+        X, y = ds()
+        lazy_search(X, y_func=gmm_score)
+
     if STEP1 in args:
+        cur_step(st=STEP1)
+        for cl_tag in CLUSTERING_TAGS:
+            if cl_tag in args:
+                Logs.set_log_file(f"{cl_tag}_Step_1")
+                cluster_tag = KMEANSK
+                for arg in [DS_1, DS_2]:
+                    if arg in args:
+                        print(f"KMEANS {arg} clustering")
 
-        if KMEANS in args:
-            Logs.set_log_file("Kmeans_Step_1")
-            if DS_1 in args:
-                ranges = [(2, 42)]
-                run_km_clustering(tag='digits', ranges=ranges, get_ds=get_digits)
+                        get_ds = datasets_info[arg]
+                        get_ds[TAGK] = arg
 
-            if DS_2 in args:
-                # ranges = [(1400, 1500), (1501, 1600), (1601, 1700), (1701, 1800)]
-                ranges = [(1500, 1519, 20), (1520, 1539, 20), (1540, 1559, 20), (1560, 1579, 20), (1580, 1599, 20)]
+                        cl_info = clustering_info[cluster_tag]
+                        cl_info[TAGK] = cluster_tag
 
-                run_km_clustering(tag='Bach_Harmony', ranges=ranges, get_ds=get_bach)
+                        results = cl_info[GETK](ranges=None, get_ds=get_ds)
+                        set_np_array(max_cluster_scores, arg, cluster_tag, results, st=STEP1)
 
-                # for t in ranges:
-                #     st = t[0]
-                #     lim = t[1]
-                #     if len(t) > 2:
-                #         pts = t[2]
-                #     else:
-                #         pts = 10
-                #
-                #     results = run_k_means2(start=st, limit=lim, get_ds=get_bach, npoints=pts)
-                #
-                #     max_idx = np.argmax(results[:, 0])
-                #     xdata = {'kmeans':f"max y:{pr_fl(results[max_idx, 0])} x:{int(results[max_idx, 1])}"}
-                #     make_fitness_plots(
-                #         title='Bach Harmony Kmeans Silhouette Scores', fn=get_plot_fn(f'k_means_1_bach_{st}_{lim}'), data={'kmeans': results},
-                #         x_label='k', y_label='Silh Scor', extra_data=xdata, zero_x_bnd=False, zero_y_bnd=False
-                #     )
+            save_cluster_scores(max_cluster_scores)
 
-        if GMMK in args:
-            Logs.set_log_file("GMM_Step_1")
-            if DS_1 in args:
-                ranges = [(2, 50, 49)]
-                for t in ranges:
-                    st = t[0]
-                    lim = t[1]
-
-                    if len(t) > 2:
-                        pts = t[2]
-                    else:
-                        pts = 10
-
-                    results = run_gmm(start=st, limit=lim, get_ds=get_digits, npoints=pts)
-
-                    max_idx = np.argmax(results[:, 0])
-                    xdata = {'gmm': f"max y:{pr_fl(results[max_idx, 0])} x:{int(results[max_idx, 1])}"}
-                    make_fitness_plots(
-                        title='Digits GMM Silhouette Scores', fn=get_plot_fn(f'gmm_1_digits_{st}_{lim}'),
-                        data={'gmm': results},
-                        x_label='k', y_label='Silh Score', extra_data=xdata
-                    )
-
-            if DS_2 in args:
-                print("Bach clustering")
-                # ranges = [(1400, 1500), (1501, 1600), (1601, 1700), (1701, 1800)]
-                # ranges = [(1500, 1519, 20), (1520, 1539, 20), (1540, 1559, 20), (1560, 1579, 20), (1580, 1599, 20)]
-                #ranges = [(2, 1000, 20), (1001, 2000, 20), (2001, 3000, 20), (3001, 4000, 20), (4001, 5000, 20), (5001, 6000, 20)]
-                ranges = [#(2, 1000, 5), (1001, 2000, 5), (2, 500, 50),
-                    #(501, 1000, 20), (1001, 1500, 20), (1501, 2000, 20)
-                     #(2000, 2500, 20), (1900, 2000, 101), (1800, 1900, 101)
-                    (2000, 2024, 25 ), (2025, 2049, 25 ), (2050, 2074, 25 ), (2075, 2099, 25 )
-                ]
-                for t in ranges:
-                    st = t[0]
-                    lim = t[1]
-                    if len(t) > 2:
-                        pts = t[2]
-                    else:
-                        pts = 10
-
-                    results = run_gmm(start=st, limit=lim, get_ds=get_bach, npoints=pts)
-
-                    max_idx = np.argmax(results[:, 0])
-                    xdata = {'gmm': f"max y:{pr_fl(results[max_idx, 0])} x:{int(results[max_idx, 1])}"}
-                    make_fitness_plots(
-                        title='Bach Harmony Kmeans Silhouette Scores', fn=get_plot_fn(f'gmm_1_bach_{st}_{lim}'),
-                        data={'gmm': results},
-                        x_label='k', y_label='Silh Score', extra_data=xdata, zero_x_bnd=False, zero_y_bnd=False
-                    )
     if STEP2 in args:
-        if PCAK in args:
-            if DS_1 in args:
-                run_pca_reduction(cluster_tag=KMEANSK, ds_tag=DS_1, get_ds=get_digits, cluster_func=run_gmm_clustering)
+        cur_step(st=STEP2)
+        scores_recorded = True
+        for k1 in max_cluster_scores[STEP1]:
+            k2_keys = list(max_cluster_scores[STEP1][k1])
+            filtered = [x for x in k2_keys if 'serialized' in x]
+            if not filtered:
+                scores_recorded = False
+                break
+        if not scores_recorded:
+            read_cluster_scores(max_cluster_scores)
 
-            if DS_2 in args:
-                run_pca_reduction(cluster_tag=KMEANSK, ds_tag=DS_2, get_ds=get_bach, cluster_func=run_gmm_clustering)
 
-        if GMMK in args:
-            if DS_1 in args:
-                run_pca_reduction(cluster_tag=GMMK, ds_tag=DS_1, get_ds=get_digits, cluster_func=run_gmm_clustering)
+        for dr_tag in DR_TAGS:
+            Logs.set_log_file(f"Step_2_{dr_tag}")
+            if dr_tag in args:
+                dr_func = dim_reduce_info[dr_tag]
+                dr_func[TAGK] = dr_tag
 
-            if DS_2 in args:
-                run_pca_reduction(cluster_tag=GMMK, ds_tag=DS_2, get_ds=get_bach, cluster_func=run_gmm_clustering)
+                plot_func = dr_func[EVALPLOTK]
 
-            # if DS_1 in args:
-            #     ds_x_reduced = run_reduction(
-            #         reduce_func=dr_pca, plot_func=pca_eval_plot, get_ds=get_digits,
-            #         fn=get_plot_fn('Step_2_PCA_digits')
-            #     )
-            #
-            #     get_digits_reduced = partial(get_data_stub, d=ds_x_reduced)
-            #     ranges = [(2, max_silh_km_digits + 1, 10)]
-            #     run_km_clustering(tag='digits_reduced', ranges=ranges, get_ds=get_digits_reduced)
-            #
-            # if DS_2 in args:
-            #     ds_x_reduced = run_reduction(
-            #         reduce_func=dr_pca, plot_func=pca_eval_plot, get_ds=get_bach,
-            #         fn=get_plot_fn('Step_2_PCA_bach')
-            #     )
-            #     get_bach_reduced = partial(get_data_stub, d=ds_x_reduced)
-            #     ranges = [(2, max_silh_km_bach + 1, 20)]
-            #     run_km_clustering(tag='Bach_reduced', ranges=ranges, get_ds=get_digits_reduced)
-            #
-            #     Logs.set_log_file("PCA_Step_2")
-            #     ds_x_reduced = run_reduction(
-            #         reduce_func=dr_pca, plot_func=pca_eval_plot, get_ds=get_digits,
-            #         fn=get_plot_fn('Step_2_PCA_digits')
-            #     )
+                for cluster_tag in [KMEANSK, GMMK]:
+                    if cluster_tag in args:
+                        cluster_info = clustering_info[cluster_tag]
+                        cluster_info[TAGK] = cluster_tag
+
+                        for ds_tag in [DS_1, DS_2]:
+                            if ds_tag in args:
+                                ds_info = datasets_info[ds_tag]
+                                ds_info[TAGK] = ds_tag
+                                print(f'STEP2 {dr_tag} {cluster_tag} {ds_tag}')
+                                run_reduction(
+                                    get_ds=ds_info, cluster_info=cluster_info, dr_func=dr_func,
+                                    plot_func=plot_func
+                                )
+
+
+def lazy_search(s, y_func=None, stop=10):
+    def valid(x):
+        return x >= 0 and x <= len(s) - 1
+
+    def hillclimb(x, y_func, s, step=1, forward=None):
+        if not s_visited[x]:
+            s_map[x, 1] = s_pts[x]
+            print(f'calculating y at {x}')
+            s_map[x, 0] = y_func(s, s_pts[x])
+            cur_val = s_map[x, 0]
+            s_visited[x] = True
+        else:
+            cur_val = s_map[x, 0]
+
+        if forward is None:
+            n_stops = [x, x]
+            step = 1
+            neighbors = [x - step, x + step]
+            for i, v in enumerate(neighbors):
+                n_stops[i] = None
+                if valid(v):
+                    forward = True if i == 1 else False
+                    ret = hillclimb(v, y_func, s, step=step * 2, forward=forward)
+                    assert(type(ret) is not list)
+                    n_stops[i] = ret
+            return n_stops[0], n_stops[1]
+        else:
+            prev_step = step/2
+            prev_pos = int(x + prev_step) if not forward else int(x - prev_step)
+            prev_val = s_vals[prev_pos]
+            assert(s_visited[prev_pos])
+
+            neighbor = x + step if forward else x - step
+
+            if valid(neighbor):
+                stop = x
+                if max_mode:
+                    if cur_val >= prev_val :
+                        stop = hillclimb(neighbor, y_func, s, step=step * 2, forward=forward)
+                else:
+                    if cur_val < prev_val:
+                        stop = hillclimb(neighbor, y_func, s, step=step * 2, forward=forward)
+
+                return stop
+            else:
+                return x
+
+    def adjust(b, f, store, pos):
+        tr = store[pos]
+        if bs != fs:
+            if not bs:
+                pass
+            else:
+                tr.append(bs)
+            if not fs:
+                pass
+            else:
+                tr.append(fs)
+
+            tr = list(set(tr))
+            tr.sort()
+            store[pos] = tr
+
+    trails = [[], []]
+
+    s_map = np.zeros((s.shape[0], 2))
+    s_vals = s_map[:, 0] # reversed x, y order
+    for i in range(len(s)):
+        s_map[i, 1] = i + 2
+    s_pts = [int(x) for x in s_map[:, 1]]
+    s_visited = np.repeat(False, len(s))
+
+    starts = {0: 1, 1: len(s.shape)//2, 2: len(s) - 2}
+    max_mode = True
+    step = 1
+    for cycle in range(stop+1):
+        print(f'cycle {cycle}')
+        for i, a in enumerate(trails):
+            if not a:
+                a.append(starts[i])
+
+            cur_start = a[0]
+            cur_end = a[-1]
+            int_len = len(a)
+            print(f'starting search at {cur_start}')
+            bs, fs = hillclimb(cur_start, y_func, s)
+            adjust(bs, fs, trails, i)
+
+            if  int_len > 1:
+                print(f'starting search at {cur_end}')
+                bs, fs = hillclimb(cur_end, y_func, s)
+                adjust(bs, fs, trails, i)
+
+                print(f'endpoints = {bs, fs}')
+
+        max_mode = not max_mode
+        make_plot(data={'lazy':s_map}, title=f"Lazy search, cycle {cycle}",
+                  fn=get_plot_fn(f"Lz_srch_cy_{cycle}")
+        )
 
 
 if __name__ == '__main__':
     import sys
     import datetime
+
     main(sys.argv[1:])
 
     time_now = datetime.datetime.now().strftime("%m/%d %H:%M")
