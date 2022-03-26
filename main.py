@@ -747,11 +747,11 @@ def run_cluster_scoring(x_pts=None, get_ds=None, cl_tag=None, score_func=None, s
     instances = X.shape[0]
     #limit = validate_limit_list(start, limit, instances)
     if x_pts is None:
-        cl_list = list(range(2, X.shape[0])) #all instance
+        cl_list = list(range(2, X.shape[0])) #all possible cluster sizes, 2 to instance - 1
     else:
         cl_list = x_pts
 
-    print(f"Evaluting cluster sizes: {cl_list}")
+    print(f"Evaluating cluster sizes: {str(cl_list[0:4])[:-1]},... {cl_list[int(len(cl_list)/2)]},... {str(cl_list[-4:])[1:]}")
     results = incr_scoring(X, cl_list, ds_tag=tag, cl_tag= cl_tag, score_func=score_func)
 
     return results
@@ -1205,10 +1205,10 @@ def main(args):
         for cl_tag in CLUSTERING_TAGS:
             if cl_tag in args:
                 Logs.set_log_file(f"{cl_tag}_Step_1")
-                cluster_tag = KMEANSK
+                cluster_tag = cl_tag
                 for arg in [DS_1, DS_2]:
                     if arg in args:
-                        print(f"KMEANS {arg} clustering")
+                        print(f"{cluster_tag} {arg} clustering")
 
                         get_ds = datasets_info[arg]
                         get_ds[TAGK] = arg
