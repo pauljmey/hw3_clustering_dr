@@ -753,8 +753,6 @@ def incr_scoring(
             if int(x) > 0:
                 visited[i] = True
 
-
-
     for i, k in enumerate(cl_list):
         if i == 0 or i % savepoint == 0:
             print(f'{k} clusters')
@@ -764,7 +762,12 @@ def incr_scoring(
                 sc = score_func(k, get_ds=get_ds)
                 results[i] = [sc, k]
                 visited[i] = True
-
+                if update:
+                    set_np_array(max_cluster_scores, ds_tag, cl_tag, results)  # will save to current step dictionary
+                    set_np_array(
+                        max_cluster_scores, ds_tag, cl_tag,
+                        results, st=STEP1, custom_tag=CL_SCORING_RES
+                    )
     set_np_array(max_cluster_scores, ds_tag, cl_tag, results) # will save to current step dictionary
 
     for i, k in enumerate(cl_list):
@@ -776,7 +779,12 @@ def incr_scoring(
                 sc = score_func(k, get_ds=get_ds)
                 results[i] = [sc, k]
                 visited[i] = True
-
+                if update:
+                    set_np_array(max_cluster_scores, ds_tag, cl_tag, results)  # will save to current step dictionary
+                    set_np_array(
+                        max_cluster_scores, ds_tag, cl_tag,
+                        results, st=STEP1, custom_tag=CL_SCORING_RES
+                    )
         if i > 0 and i % savepoint == 0:
             print("Savepoint")
             save_np(max_cluster_scores, ds_tag=ds_tag, cl_tag=cl_tag)
@@ -789,10 +797,10 @@ CL_SCORING_RES = 'cl-scoring'
 
 def run_cluster_scoring(
         x_pts=None, get_ds=None, cl_tag=None,
-        score_func=None, use_prev=True, update=False
+        score_func=None, use_prev=False, update=False
 ):
     import numpy as np
-    if use_prev and update:
+    if use_prev or update:
         ds_tag = get_ds[TAGK]
         prev_found = check_for_previous_results(
             s1=cur_step(), ds_tag=ds_tag, cl_tag=cl_tag,
