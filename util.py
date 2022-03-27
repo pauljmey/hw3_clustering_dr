@@ -142,6 +142,8 @@ def bach_plot():
     plt.savefig(get_plot_fn(tag="bach_ds"))
     hook = True
 
+def add_points(a, score_):
+
 
 if __name__ == '__main__':
     from main import get_digits

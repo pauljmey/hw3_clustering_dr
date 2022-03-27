@@ -738,17 +738,29 @@ def kmeans_score(k, get_ds=None, plot=False, cl_tag=KMEANSK):
 def incr_scoring(
         cl_list, get_ds=None, ds_tag=None,
         cl_tag=None, score_func= None, savepoint=100,
-        skiplast=False
+        skiplast=False, update=False, targ=None
 ):
-    results = np.zeros((len(cl_list), 2))
-    visited = [False] * len(results)
+
+    X, y = datasets_info[ds_tag][GETK]()
+    all = [x for x in range(2, X.shape[0])]
+    if not update:
+        results = np.zeros((len(all), 2))
+        visited = [False] * len(results)
+    else:
+        results = targ
+        visited = [False] * len(results)
+        for i, x in enumerate(results[:,1]):
+            if int(x) > 0:
+                visited[i] = True
+
+
 
     for i, k in enumerate(cl_list):
         if i == 0 or i % savepoint == 0:
             print(f'{k} clusters')
             if skiplast and i == len(cl_list) - 1:
                 pass
-            else:
+            elif not visited[i]:
                 sc = score_func(k, get_ds=get_ds)
                 results[i] = [sc, k]
                 visited[i] = True
@@ -777,20 +789,20 @@ CL_SCORING_RES = 'cl-scoring'
 
 def run_cluster_scoring(
         x_pts=None, get_ds=None, cl_tag=None,
-        score_func=None, use_prev=True
+        score_func=None, use_prev=True, update=False
 ):
     import numpy as np
-    if use_prev:
+    if use_prev and update:
         ds_tag = get_ds[TAGK]
         prev_found = check_for_previous_results(
             s1=cur_step(), ds_tag=ds_tag, cl_tag=cl_tag,
             custom_tag=CL_SCORING_RES
         )
-        if prev_found is not None:
+        if prev_found is not None and not update:
             return prev_found
 
     X, y = get_ds[GETK]()
-    tag = get_ds[TAGK]
+    ds_tag = get_ds[TAGK]
 
     instances = X.shape[0]
     #limit = validate_limit_list(start, limit, instances)
@@ -800,7 +812,14 @@ def run_cluster_scoring(
         cl_list = x_pts
 
     print(f"Evaluating cluster sizes: {str(cl_list[0:4])[:-1]},... {cl_list[int(len(cl_list)/2)]},... {str(cl_list[-4:])[1:]}")
-    results = incr_scoring(cl_list, get_ds=get_ds, ds_tag=tag, cl_tag= cl_tag, score_func=score_func)
+    if update:
+        results = incr_scoring(
+            cl_list, get_ds=get_ds, ds_tag=ds_tag,
+            cl_tag= cl_tag, score_func=score_func, update=update, targ=prev_found)
+    else:
+        results = incr_scoring(
+            cl_list, get_ds=get_ds, ds_tag=ds_tag,
+            cl_tag=cl_tag, score_func=score_func, update=update)
 
     set_np_array(max_cluster_scores, ds_tag, cl_tag, results, custom_tag=CL_SCORING_RES)
 
@@ -1123,20 +1142,19 @@ def set_series(
     data[ptag] = cur_s
 
 def check_for_previous_results(s1=None, ds_tag=None, custom_tag=None, cl_tag=None):
-    if custom_tag is None:
-        r = get_np_array(
-            max_cluster_scores, ds_tag, cl_tag,
-            custom_tag=custom_tag, st=s1
-        )
-    else:
-        r = get_np_array(max_cluster_scores, ds_tag, cl_tag, st=s1)
+
+    r = get_np_array(
+        max_cluster_scores, ds_tag, cl_tag, custom_tag=custom_tag, st=s1
+    )
+
     return r
 
-def run_km_clustering(title=None, ranges=None, get_ds=None, cl_tag=KMEANSK):
+def run_km_clustering(title=None, ranges=None, get_ds=None, cl_tag=KMEANSK, update=False):
 
     #starts, points, limits = format_ranges(ranges)
     results = run_cluster_scoring(
-        x_pts=ranges, get_ds=get_ds, cl_tag=cl_tag, score_func=kmeans_score
+        x_pts=ranges, get_ds=get_ds, cl_tag=cl_tag,
+        score_func=kmeans_score, update=update
     )
     ds_tag = get_ds[TAGK]
     data = {}
@@ -1172,10 +1190,13 @@ def run_km_clustering(title=None, ranges=None, get_ds=None, cl_tag=KMEANSK):
     return results
 
 
-def run_gmm_clustering(title=None, get_ds=None, ranges=None, cl_tag=GMMK):
+def run_gmm_clustering(title=None, get_ds=None, ranges=None, cl_tag=GMMK, update=False):
 
     #starts, points, limits = format_ranges(ranges)
-    results = run_cluster_scoring(x_pts=ranges, get_ds=get_ds, cl_tag=cl_tag, score_func=gmm_score)
+    results = run_cluster_scoring(
+        x_pts=ranges, get_ds=get_ds, cl_tag=cl_tag,
+        score_func=gmm_score, update=update
+    )
 
     st = cur_step()
     ds_tag = get_ds[TAGK]
@@ -1547,7 +1568,7 @@ def main(args):
         X, y = ds()
         lazy_search(X, y_func=gmm_score)
 
-    if STEP1 in args:
+    if STEP1 in args or 'populate' in args:
         cur_step(st=STEP1)
         for cl_tag in CLUSTERING_TAGS:
             if cl_tag in args:
@@ -1563,7 +1584,35 @@ def main(args):
                         cl_info = clustering_info[cluster_tag]
                         cl_info[TAGK] = cluster_tag
 
-                        results = cl_info[GETK](ranges=None, get_ds=get_ds)
+                        if 'populate':
+                            X, y = get_ds[GETK]()
+                            lim = X.shape[0]
+                            start=2
+
+                            rng_list=[]
+                            rng_list.append(list(range(2,20)))
+                            rng_list.append(list(range(2, lim, 500)))
+                            rng_list.append(list(range(2, lim, 250)))
+                            rng_list.append(list(range(2, lim, 50)))
+
+                            for i, r in enumerate(rng_list):
+                                if i == 0:
+                                    results = cl_info[GETK](ranges=r, get_ds=get_ds)
+                                    set_np_array(max_cluster_scores, arg, cluster_tag, results, st=STEP1)
+                                    set_np_array(
+                                        max_cluster_scores, arg, cluster_tag,
+                                        results, st=STEP1, custom_tag=CL_SCORING_RES
+                                    )
+                                else:
+                                    results = cl_info[GETK](ranges=r, get_ds=get_ds, update=True)
+                                    set_np_array(max_cluster_scores, arg, cluster_tag, results, st=STEP1)
+                                    set_np_array(
+                                        max_cluster_scores, arg, cluster_tag,
+                                        results, st=STEP1, custom_tag=CL_SCORING_RES
+                                    )
+                        else:
+                            results = cl_info[GETK](ranges=None, get_ds=get_ds)
+
                         set_np_array(max_cluster_scores, arg, cluster_tag, results, st=STEP1)
 
             save_cluster_scores(max_cluster_scores)
