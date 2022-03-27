@@ -151,6 +151,7 @@ def get_day_prefix(now_str=None):
     time_tag_parts = now_str.split('_')
     return "_".join(time_tag_parts[:2])
 
+
 def get_plot_fn(tag=None, root_path='./plots', ftype='.png'):
     import datetime, os
     time_tag = datetime.datetime.now().strftime("%m_%d_%H_%M")
@@ -178,6 +179,9 @@ def get_plot_fn(tag=None, root_path='./plots', ftype='.png'):
     full_fn = test_fn
 
     return full_fn
+
+def get_ser_fn(tag=None, ftype='.npy'):
+    return get_plot_fn(tag=tag, ftype=ftype)
 
 def get_converge(npl, ep=.0001):
     cnv = 0
@@ -646,12 +650,27 @@ def validate_limit_list(start, limit, instances):
 
     return limit
 
-def gmm_score(X, k):
+def gmm_score(k, get_ds=None, plot=False, cl_tag=GMMK):
     from sklearn.metrics import silhouette_score
 
+    X, y = get_ds[GETK]()
+    tag = get_ds[TAGK]
     gmm_obj = GMM(k)
     gmm_obj.fit(X)
     label = gmm_obj.predict(X)
+
+    if plot:
+        st=cur_step()
+
+        dr_tag = 'not_red'
+        if REDK in get_ds:
+            dr_tag = get_ds[REDK]
+
+        cluster_plot(
+            get_ds=get_ds, labels=label, dr_tag=dr_tag,
+            cl_tag=cl_tag, fn=get_plot_fn(f'clu_plt_{cl_tag}_{dr_tag}')
+        )
+        fn_tag = f'{cl_tag}_{dr_tag}_{st}'
 
     return silhouette_score(X, label)
 
@@ -682,29 +701,45 @@ def gmm_score(X, k):
 #     return results
 
 
-def save_np(a, st=None, ds_tag=None, cl_tag=None, extra=None,  fn=None, ftype='.npy'):
+def save_np(a, st=None, ds_tag=None, cl_tag=None, extra=None,  fn=None):
     a_fn = fn
     if st is None:
         st = cur_step()
     if not fn:
         fn_tag = f'{st}@{str(ds_tag)}@{str(cl_tag)}@{str(extra)}'
-        a_fn = get_plot_fn(fn_tag, ftype=ftype)
+        a_fn = get_ser_fn(fn_tag)
 
     np.save(a_fn, a)
 
 
-def kmeans_score(X, k):
+def kmeans_score(k, get_ds=None, plot=False, cl_tag=KMEANSK):
     from sklearn.cluster import KMeans
     from sklearn.metrics import silhouette_score
 
+    X, y= get_ds[GETK]()
     kMean = KMeans(n_clusters=k)
     kMean.fit(X)
     label = kMean.predict(X)
 
+    if plot:
+        st = cur_step()
+        dr_tag = 'not_red'
+        if REDK in get_ds:
+            dr_tag = get_ds[REDK]
+
+        cluster_plot(
+            get_ds=get_ds, labels=label, dr_tag=dr_tag,
+            cl_tag=cl_tag, fn=get_plot_fn(f'clu_plt_{cl_tag}_{dr_tag}')
+        )
+
     return silhouette_score(X, label)
 
 
-def incr_scoring(X, cl_list, ds_tag=None, cl_tag=None, score_func= None, savepoint=100, skiplast=False):
+def incr_scoring(
+        cl_list, get_ds=None, ds_tag=None,
+        cl_tag=None, score_func= None, savepoint=100,
+        skiplast=False
+):
     results = np.zeros((len(cl_list), 2))
     visited = [False] * len(results)
 
@@ -714,7 +749,7 @@ def incr_scoring(X, cl_list, ds_tag=None, cl_tag=None, score_func= None, savepoi
             if skiplast and i == len(cl_list) - 1:
                 pass
             else:
-                sc = score_func(X, k)
+                sc = score_func(k, get_ds=get_ds)
                 results[i] = [sc, k]
                 visited[i] = True
 
@@ -726,7 +761,7 @@ def incr_scoring(X, cl_list, ds_tag=None, cl_tag=None, score_func= None, savepoi
             pass
         else:
             if not visited[i]:
-                sc = score_func(X, k)
+                sc = score_func(k, get_ds=get_ds)
                 results[i] = [sc, k]
                 visited[i] = True
 
@@ -738,8 +773,21 @@ def incr_scoring(X, cl_list, ds_tag=None, cl_tag=None, score_func= None, savepoi
 
     return results
 
-def run_cluster_scoring(x_pts=None, get_ds=None, cl_tag=None, score_func=None, skipLast=False, savepoint=100):
+CL_SCORING_RES = 'cl-scoring'
+
+def run_cluster_scoring(
+        x_pts=None, get_ds=None, cl_tag=None,
+        score_func=None, use_prev=True
+):
     import numpy as np
+    if use_prev:
+        ds_tag = get_ds[TAGK]
+        prev_found = check_for_previous_results(
+            s1=cur_step(), ds_tag=ds_tag, cl_tag=cl_tag,
+            custom_tag=CL_SCORING_RES
+        )
+        if prev_found is not None:
+            return prev_found
 
     X, y = get_ds[GETK]()
     tag = get_ds[TAGK]
@@ -752,17 +800,41 @@ def run_cluster_scoring(x_pts=None, get_ds=None, cl_tag=None, score_func=None, s
         cl_list = x_pts
 
     print(f"Evaluating cluster sizes: {str(cl_list[0:4])[:-1]},... {cl_list[int(len(cl_list)/2)]},... {str(cl_list[-4:])[1:]}")
-    results = incr_scoring(X, cl_list, ds_tag=tag, cl_tag= cl_tag, score_func=score_func)
+    results = incr_scoring(cl_list, get_ds=get_ds, ds_tag=tag, cl_tag= cl_tag, score_func=score_func)
+
+    set_np_array(max_cluster_scores, ds_tag, cl_tag, results, custom_tag=CL_SCORING_RES)
 
     return results
 
+def dr_rca_gp(X,y, ds_tag=None):
+    import numpy as np
+    from sklearn import random_projection
+    X = np.random.rand(100, 10000)
+    transformer = random_projection.GaussianRandomProjection()
+    X_new = transformer.fit_transform(X)
+    return transformer, X_new
 
+def dr_rca_sm(X,y, ds_tag=None):
+    import numpy as np
+    from sklearn import random_projection
+    X = np.random.rand(100, 10000)
+    transformer = random_projection.SparseRandomProjection()
+    X_new = transformer.fit_transform(X)
+    return transformer, X_new
 
+RCAGPK = 'rcagp'
+RCASMK = 'rcasm'
 
-def dr_ica(X,y, ds_tag=None, do_whitening=True):
+def dr_ica(X,y, k=None, ds_tag=None, do_whitening=True, eff_score=False):
     from sklearn import decomposition
     from scipy.stats import norm
     from scipy.stats import kurtosis
+
+    if k is not None:
+        num_components = int(kur_results[kur_max_idx, 1])
+        ica = decomposition.FastICA(n_components=num_components, whiten=do_whitening)
+
+        return ica, ica.fit_transform(X)
 
     space_dim = X.shape[1]
     kur_results = np.zeros((space_dim, 2))
@@ -797,6 +869,7 @@ def dr_ica(X,y, ds_tag=None, do_whitening=True):
 
     #kur_results = np.abs(kur_results)
     max_idx = np.argmax(kur_results[:,0])
+    kur_max_idx  = max_idx
     plot_tag = 'kur'
     data = {plot_tag: kur_results}
     xdata = {plot_tag: f"max y:{pr_fl(kur_results[max_idx, 0])} x:{int(kur_results[max_idx, 1])}"}
@@ -839,7 +912,7 @@ def dr_ica(X,y, ds_tag=None, do_whitening=True):
         y_label="Kur Score", extra_data=xdata, fn=get_plot_fn(f'ICA_exp_plot_{ds_tag}'),
     )
 
-    num_components = int(kur_results[highest_eff_score, 1])
+    num_components = int(kur_results[kur_max_idx, 1])
     ica = decomposition.FastICA(n_components=num_components, whiten=do_whitening)
 
     return ica, ica.fit_transform(X)
@@ -849,12 +922,88 @@ DR_ICA={
     GETK:dr_ica
 }
 
+
+def cluster_plot(get_ds=None, threshold=6, labels=None, dr_tag=None, cl_tag=None, fn=None):
+    import numpy as np
+    from main import get_plot_fn
+    from main import get_digits
+    import pandas as pd
+    import seaborn as sns
+    import matplotlib.pyplot as plt
+    import matplotlib
+    from sklearn.feature_selection import mutual_info_classif
+
+    X, y = get_ds[GETK]()
+
+    if labels is None:
+        labels = y
+
+    if type(y) is list or y is None:
+        hook = True
+
+    if len(labels.shape) > 1:  # flatten one hot encoding
+        labels = np.array([np.argmax(x) for x in labels])
+
+    try:
+        res = mutual_info_classif(X, labels)
+    except Exception as ex:
+        hook = True
+        raise
+
+    columns = [str(x) for x in range(X.shape[1] + 1)]
+
+    kept={}
+    for score, f_name in sorted(zip(res, columns), reverse=True):
+        print(f_name, score)
+        kept[f_name]=score
+
+    n1 = np.column_stack((X, labels))
+
+    df = pd.DataFrame(n1, columns=columns)
+
+    for c in columns[:-1]:
+        if c not in list(kept)[:threshold]:
+            df = df.drop(c, 1)
+
+    matplotlib.rcParams['font.size'] = 18
+    sns.set_context('talk', font_scale=1.2);
+
+    try:
+        sns.pairplot(df, hue=columns[-1], corner=True, diag_kind='hist')
+    except Exception as ex:
+        hook = True
+        raise
+
+    ds_tag = get_ds[TAGK]
+    if dr_tag is None:
+        dr_tag = 'unreduced'
+    st = cur_step()
+    if fn is None:
+        fn = get_plot_fn(tag=f"reduced_{st}_{ds_tag}_{dr_tag}_{cl_tag}")
+
+    plt.savefig(fn)
+
+def reduced_plot(x_red):
+    df1_filtered = df1[filter]
+    matplotlib.rcParams['font.size'] = 18
+    sns.set_context('talk', font_scale=1.2);
+
+    plt.figure(figsize=(20, 20))
+    sns.pairplot(df1_filtered, hue='Chord_label', corner=True)
+    # plt.margins(10,10)
+
+    plt.savefig(get_plot_fn(tag="bach_ds"))
+
+
 def dr_pca(X,y, ds_tag=None):
     from sklearn import decomposition
     pca = decomposition.PCA(n_components=.95)
     pca.fit(X)
 
-    return pca, pca.transform(X)
+    x_red = pca.transform(X)
+    #reduced_plot(x_red)
+
+    return pca, x_red
 
 DR_PCA={
     GETK:dr_pca
@@ -868,6 +1017,8 @@ def ica_eval_plot(estimator=None, fn=None, ds_tag=None):
     ica = estimator
     # for i, v in enumerate(ica.components_):
 
+def rca_eval_plot(estimator=None, fn=None, ds_tag=None):
+    pass
 
 def pca_eval_plot(estimator=None, fn=None, ds_tag=None):
     import matplotlib.pyplot as plt
@@ -902,10 +1053,12 @@ EVALPLOTK = 'evp'
 DRFUNCK = 'drfunc'
 REDK = 'redmeth'
 
-DR_TAGS = [PCAK, ICAK]
+DR_TAGS = [PCAK, ICAK, RCAGPK, RCASMK]
 dim_reduce_info = {
     PCAK: {DRFUNCK:dr_pca, EVALPLOTK:pca_eval_plot},
-    ICAK: {DRFUNCK:dr_ica, EVALPLOTK:ica_eval_plot}
+    ICAK: {DRFUNCK:dr_ica, EVALPLOTK:ica_eval_plot},
+    RCAGPK: {DRFUNCK: dr_rca_gp, EVALPLOTK:rca_eval_plot},
+    RCASMK: {DRFUNCK: dr_rca_sm, EVALPLOTK:rca_eval_plot}
 }
 
 def run_reduction_2(reduce_func=None, plot_func=None, get_ds=None, fn=None):
@@ -947,22 +1100,45 @@ def format_ranges(ranges):
 
 def set_series(
     data, xdata, ptag=None,
-    st=None, ds_tag=None, cl_tag=None
+    st=None, ds_tag=None, cl_tag=None, pts=None
 ):
     cur_s = get_np_array(max_cluster_scores, ds_tag, cl_tag, st=st)
-    max_idx = np.argmax(cur_s[:, 0])
+
+    if cur_s is None:
+        assert(False)
+    else:
+        max_idx = np.argmax(cur_s[:, 0])
+        max_x = cur_s[max_idx,1]
+
+    if pts is not None:
+        assert (max_x in pts)
+        fb = [int(x) in pts for x in cur_s[:, 1]]
+        cur_s = cur_s[fb]
+        cur_st = cur_step()
+
+        assert(cur_st > st)
+        set_np_array(max_cluster_scores, ds_tag, cl_tag, custom_tag='trunc_plot_series', st=st)
+
     xdata[ptag] = f"max y:{pr_fl(cur_s[max_idx, 0])} x:{int(cur_s[max_idx, 1])}"
     data[ptag] = cur_s
 
+def check_for_previous_results(s1=None, ds_tag=None, custom_tag=None, cl_tag=None):
+    if custom_tag is None:
+        r = get_np_array(
+            max_cluster_scores, ds_tag, cl_tag,
+            custom_tag=custom_tag, st=s1
+        )
+    else:
+        r = get_np_array(max_cluster_scores, ds_tag, cl_tag, st=s1)
+    return r
 
 def run_km_clustering(title=None, ranges=None, get_ds=None, cl_tag=KMEANSK):
 
     #starts, points, limits = format_ranges(ranges)
-    results = run_cluster_scoring(x_pts=ranges, get_ds=get_ds, cl_tag=cl_tag, score_func=kmeans_score)
+    results = run_cluster_scoring(
+        x_pts=ranges, get_ds=get_ds, cl_tag=cl_tag, score_func=kmeans_score
+    )
     ds_tag = get_ds[TAGK]
-
-    set_np_array(max_cluster_scores, ds_tag, cl_tag, results)
-
     data = {}
     xdata = {}
 
@@ -978,8 +1154,8 @@ def run_km_clustering(title=None, ranges=None, get_ds=None, cl_tag=KMEANSK):
     if ranges is None:
         range_text = "fullr"
     else:
-        start = ranges[0][0]
-        lim = ranges[0][-1]
+        start = ranges[0]
+        lim = ranges[-1]
         range_text = f'{start}-{lim}'
 
 
@@ -1009,30 +1185,49 @@ def run_gmm_clustering(title=None, get_ds=None, ranges=None, cl_tag=GMMK):
     data = {}
     xdata = {}
 
+    pt_list = [int(x) for x in results[:, 1]]
 
     if st == STEP2:
         ptag = st + ' (reduced)'
         set_series(data, xdata, ptag=ptag, st=STEP2, ds_tag=ds_tag, cl_tag=cl_tag)
-        set_series(data, xdata, ptag=STEP1, st=STEP1, ds_tag=ds_tag, cl_tag=cl_tag)
+        set_series(
+            data, xdata, ptag=STEP1,
+            st=STEP1, ds_tag=ds_tag, cl_tag=cl_tag
+        )
     elif st == STEP1:
         ptag = st
-        set_series(data, xdata, ptag=ptag, st=STEP1, ds_tag=ds_tag, cl_tag=cl_tag)
+        set_series(
+            data, xdata, ptag=ptag,
+            st=STEP1, ds_tag=ds_tag, cl_tag=cl_tag,
+            pts=pt_list  #use the same x pts for both series
+        )
 
-    start = starts[0]
-    lim = limits[-1]
+    if ranges is None:
+        range_text = "fullr"
+    else:
+        start = ranges[0]
+        lim = ranges[0]
+        range_text = f'{start}-{lim}'
+
+    ds_txt = ds_tag
+    if REDK in get_ds:
+        ds_txt = f'{ds_txt}_{get_ds[REDK]}'
 
     make_plot(
-        title=title, fn=get_plot_fn(f'{cl_tag}_{ds_tag}_{st}_{start}_{lim}'),
+        title=title, fn=get_plot_fn(f'{cl_tag}_{ds_txt}_{st}_{range_text}'),
         data=data,
         x_label='k', y_label='Silh Scor', extra_data=xdata
     )
     return results
 
+SCOREK = 'score_func'
 KM_CLUSTERING = {
     GETK: run_km_clustering,
+    SCOREK: kmeans_score
 }
 GMM_CLUSTERING = {
-    GETK: run_gmm_clustering
+    GETK: run_gmm_clustering,
+    SCOREK: gmm_score
 }
 
 CLUSTERING_TAGS = [KMEANSK, GMMK]
@@ -1045,38 +1240,67 @@ clustering_info = {
 
 def get_step1_range(ds_tag=None, cluster_tag=None):
 
-    max_idx = max_cluster_scores[STEP1][ds_tag][cluster_tag][STEP_RES]['max_idx']
-    step1_series = get_np_array(max_cluster_scores, ds_tag, cluster_tag, st=STEP1)
-    max_x = step1_series[max_idx, 1]
+    try:
+        if STEP_RES in max_cluster_scores[STEP1][ds_tag][cluster_tag]:
+            max_idx = max_cluster_scores[STEP1][ds_tag][cluster_tag][STEP_RES]['max_idx']
+            step1_series = get_np_array(max_cluster_scores, ds_tag, cluster_tag, st=STEP1)
+            max_x = step1_series[max_idx, 1]
+        else:
+            max_x = max_cluster_scores[STEP1][ds_tag][cluster_tag]['max']
+            max_x = int(max_x)
+
+    except Exception as ex:
+        hook = True
+        raise
+
     #max_y = step1_series[max_idx:0]
 
     start = 2
-    last_pt = int(1.1 * max_x)
-    pts = last_pt - start + 1
-    if last_pt - start < 20:
-        ret_rng = list(range(2, last_pt + 1))
+    if max_x < 20:
+        last_pt = 20
+    elif max_x < 40:
+        last_pt = int(2.0 * max_x)
     else:
-        r1 = make_x_points(starts=[start], limits=[last_pt], points=[20])
-        r1 = set(r1)
-        r1 = r1.union({max_x})
-        ret_rng = list(r1)
-        ret_rng.sort()
-        assert(max_x in ret_rng)
+        last_pt = int(1.2 * max_x)
 
-    return [ret_rng], max_idx
+    pts = last_pt - start + 1
+    if last_pt - start <= 40:
+        ret_rng = list(range(2, last_pt + 1))
+    elif last_pt - start <= 60:
+        ret_rng = list(range(2, last_pt + 1, 2))
+    else:
+        ret_rng = make_x_points(starts=[start], limits=[last_pt], points=[20])
+
+    ret_rng = list(set(ret_rng).union({max_x}))
+    ret_rng.sort()
+    assert(max_x in ret_rng)
+    max_idx = ret_rng.index(max_x)
+
+    return ret_rng, max_idx
+
+def get_data_stub(d=None, y=None):
+    return d, y
 
 def run_reduction(
     get_ds=None, cluster_info=None, dr_func=None,
     plot_func=None
 ):
-    def get_data_stub(d=None):
-        return d, None
-
     ds_tag = get_ds[TAGK]
     dr_tag = dr_func[TAGK]
     ds_x_reduced = run_reduction_2(
         reduce_func=dr_func, plot_func=plot_func, get_ds=get_ds,
         fn=get_plot_fn(f'Step_2_PCA_{ds_tag}')
+    )
+
+    save_np(
+        ds_x_reduced, ds_tag=ds_tag, cl_tag="na",
+        extra=f'{ds_tag}_reduced_by_{dr_tag}'
+    )
+
+    # cluster plot (baseline) reduced  dataset against labels
+    cluster_plot(
+        get_ds=get_ds, dr_tag=dr_tag, cl_tag='baseline',
+        fn=None
     )
 
     get_reduced = partial(get_data_stub, d=ds_x_reduced)
@@ -1087,10 +1311,15 @@ def run_reduction(
     cluster_func = cluster_info[GETK]
     ranges, s1_max = get_step1_range(ds_tag=ds_tag, cluster_tag=cl_tag)
     title = f'{ds_tag} {cl_tag} Silhouette Scores\nred. by {dr_tag} dim={ds_x_reduced.shape[1]}, s1 xmax = {s1_max}'
-    cluster_func(title=title, ranges=ranges, get_ds=GetReduced)
+    cl_results = cluster_func(title=title, ranges=ranges, get_ds=GetReduced)
+    max_idx = np.argmax(cl_results[:,0])
+    max_x = cl_results[max_idx, 1]
+    score_func = cluster_info[SCOREK]
+    score_func(int(max_x), get_ds=GetReduced, plot=True, cl_tag=cl_tag) #
+    #gmm_score
 
-def set_np_array(info, k1, k2, a, st=None): # ds = k1, k2 = CL METHOD
-
+def set_np_array(info, k1, k2, a, custom_tag=None, st=None, sfn=None): # ds = k1, k2 = CL METHOD
+    import os
     if st is None:
         st = cur_step()
 
@@ -1103,21 +1332,39 @@ def set_np_array(info, k1, k2, a, st=None): # ds = k1, k2 = CL METHOD
     if STEP_RES not in info[st][k1][k2]:
         info[st][k1][k2][STEP_RES] = {}
 
-    cur_d = info[st][k1][k2][STEP_RES]
+    if custom_tag is not None:
+        if custom_tag not in info[st][k1][k2]:
+            info[st][k1][k2][custom_tag] = {}
+
+        cur_d = info[st][k1][k2][custom_tag]
+    else:
+        cur_d = info[st][k1][k2][STEP_RES]
+
     if 'a' not in cur_d:
         old_a = None
     else:
         old_a = np.array(cur_d['a'])
 
-    ba = old_a == a
-    import os
-    if not ba.all() or 'serialized' not in cur_d or not os.path.exists(cur_d['serialized']):
+    if old_a is None or len(old_a) != len(a):
+        ba = False
+    else:
+        ba = old_a == a
+        ba = ba.all()
 
-        if 'serialized' not in cur_d or not os.path.exists(cur_d['serialized']):
-            a_fn = get_plot_fn(tag=f'saved_npa_{st}_{k1}_{k2}', ftype='.npy')
+    update = False
+    if 'serialized' in cur_d:
+        a_fn = cur_d['serialized']
+    else:
+        update = True
+        if sfn is not None:
+            a_fn = sfn
         else:
-            a_fn = cur_d['serialized']
+            a_fn = get_ser_fn(tag=f'saved_npa_{st}_{k1}_{k2}')
 
+    if not ba:
+        update = True
+
+    if update:
         max_idx = np.argmax(a[:,0])
         cur_d['max_idx']= int(max_idx)
         cur_d['a'] = a.tolist()
@@ -1127,7 +1374,7 @@ def set_np_array(info, k1, k2, a, st=None): # ds = k1, k2 = CL METHOD
     save_cluster_scores(info)
     return a
 
-def get_np_array(info, k1, k2, st=None):
+def get_np_array(info, k1, k2, custom_tag=0, st=None):
     if st is None:
         st = cur_step()
 
@@ -1135,14 +1382,25 @@ def get_np_array(info, k1, k2, st=None):
         hook = True
 
     assert (k1 in info[st] and k2 in info[st][k1])
-    assert(STEP_RES in info[st][k1][k2])
-    cur_d = info[st][k1][k2][STEP_RES]
+    if not custom_tag:
+        # assert(STEP_RES in info[st][k1][k2])
+        cur_k = STEP_RES
+    else:
+        #assert (custom_tag in info[st][k1][k2])
+        cur_k = custom_tag
+
+    if cur_k not in info[st][k1][k2]:
+        return None
+
+    cur_d = info[st][k1][k2][cur_k]
     a = None
     if 'serialized' in cur_d:
         a_fn = cur_d["serialized"]
         a = np.load(a_fn)
         #assert ((np.array(cur_d['a']) == a).all())
         cur_d['a'] = a.tolist()
+    else:
+        print(f'serialized key not found in target node: {cur_d}')
 
     return a
 
@@ -1164,10 +1422,17 @@ def read_cluster_scores(scores, fn='./max_cluster_scores.json'):
         for k1 in keys:
             for k2 in src[k0][k1]:
                 cur_d = src[k0][k1][k2]
-                if STEP_RES in cur_d:
-                    a_fn = cur_d[STEP_RES]['serialized']
-                    read_a = get_np_array(src, k1, k2, st=k0)
-                    cur_d[STEP_RES]['safe_a'] = read_a.tolist()
+                assert(type(cur_d) is dict)
+                if type(cur_d) is dict:
+                    for cur_k in cur_d:
+                        if type(cur_d[cur_k]) is dict and 'serialized' in cur_d[cur_k]:
+                            a_fn = cur_d[STEP_RES]['serialized']
+                            if STEP_RES == cur_k:
+                                read_a = get_np_array(src, k1, k2, st=k0)
+                            else:
+                                read_a = get_np_array(src, k1, k2, custom_tag=cur_k, st=k0)
+
+                            cur_d[cur_k]['safe_a'] = read_a.tolist()
 
                 cur_targ = targ[k0][k1][k2]
                 for k3 in cur_d:
@@ -1184,12 +1449,94 @@ def read_cluster_scores(scores, fn='./max_cluster_scores.json'):
                     else:
                         print(f'{k0}-{k1}-{k2}-{k3}: original == new')
 
+
+def set_serial_store(dump_dir, match_str='saved_npa', fn = './max_cluster_scores.json'):
+    import json
+    import os
+    flist = os.listdir(dump_dir)
+    with open(fn, 'r') as jfp:
+        scores_pickled = json.load(jfp)
+        found = [x for x in flist if match_str in x]
+
+        st = ds_tag = None
+        for f in found:
+            toks = f.split('_')
+            if '@' in toks[0]:
+                continue
+            else:
+                hook = True
+                for i, tok in enumerate(toks):
+                    if i == 2 and tok in [STEP1, STEP2]:
+                        st = tok
+                    if i == 3 and tok in [DS_1, DS_2]:
+                        ds_tag = tok
+                    if i == 4 and tok in [KMEANSK, GMMK]:
+                        cl_tag = tok
+
+            fp = os.path.join(dump_dir, f)
+            a = np.load(fp)
+            set_np_array(scores_pickled, ds_tag, cl_tag, a, st=st, sfn=fp)
+
+    save_cluster_scores(scores_pickled)
+
 def main(args):
+    cur_arg = 'update_stored'
+    if cur_arg in args:
+        pos = args.index(cur_arg)
+        if pos <= len(args) - 2:
+            set_serial_store(args[pos + 1])
+
+    #def cluster_plot(get_ds=None, threshold=6, labels=None, dr_tag=None, cl_tag=None, fn=None):
+    if 'cluster_plots' in args:
+        cur_step(STEP3)
+        for ds in [DS_1, DS_2]:
+            ds_info = datasets_info[ds]
+            ds_info[TAGK] = ds
+            ds_tag= ds_info[TAGK]
+            print('Dataset native cluster plot')
+            cluster_plot(get_ds=ds_info, fn=get_plot_fn(f'{ds}_against_labels'))
+            print('Dataset kmeans cluster plot')
+            k = max_cluster_scores[STEP1][ds][KMEANSK]['max']
+            kmeans_score(k, get_ds=ds_info, plot=True)
+            print('Dataset gmm cluster plot')
+            k = max_cluster_scores[STEP1][ds][GMMK]['max']
+            gmm_score(k, get_ds=ds_info, plot=True)
+
+            for dr_tag in DR_TAGS:
+                if dr_tag in args:
+                    print(f"Cluster plots on data reduced by {dr_tag}")
+                    dr_info = dim_reduce_info[dr_tag]
+                    dr_info[TAGK] = dr_tag
+
+                    X, y = ds_info[GETK]()
+                    if dr_tag == ICAK:
+                        k = max_cluster_scores[STEP1][ds][KMEANSK]['max']
+                        estimator, x_red = dr_info[DRFUNCK](X, y)
+                    else:
+                        estimator, x_red = dr_info[DRFUNCK](X, y)
+
+                    save_np(
+                        x_red, ds_tag=ds_tag, cl_tag="na",
+                        extra=f'ds_reduced_by_{dr_tag}'
+                    )
+
+                    get_reduced = partial(get_data_stub, d=x_red, y=y)
+                    GetReduced = {
+                        TAGK: ds_info[TAGK], GETK: get_reduced, REDK: dr_info[TAGK]
+                    }
+
+                    cluster_plot(
+                        get_ds=GetReduced, fn=get_plot_fn(f'{ds}_{dr_tag}_against_labels')
+                    )
+                    k = max_cluster_scores[STEP1][ds][KMEANSK]['max']
+                    kmeans_score(k, get_ds=GetReduced, plot=True)
+                    k = max_cluster_scores[STEP1][ds][GMMK]['max']
+                    gmm_score(k, get_ds=GetReduced, plot=True)
 
     if 'test' in args:
         TEST_MODE(val=True)
 
-    if 'no_reload' not in args:
+    if 'reload' in args:
         read_cluster_scores(max_cluster_scores)
 
     if 'INIT' in args:
@@ -1224,15 +1571,20 @@ def main(args):
     if STEP2 in args:
         cur_step(st=STEP2)
         scores_recorded = True
+        use_original = True
         for k1 in max_cluster_scores[STEP1]:
-            k2_keys = list(max_cluster_scores[STEP1][k1])
-            filtered = [x for x in k2_keys if 'serialized' in x]
-            if not filtered:
-                scores_recorded = False
-                break
+            if use_original:
+                pass
+                scores_recorded = True
+            else:
+                k2_keys = list(max_cluster_scores[STEP1][k1])
+                filtered = [x for x in k2_keys if 'serialized' in x]
+                if not filtered:
+                    scores_recorded = False
+                    break
+
         if not scores_recorded:
             read_cluster_scores(max_cluster_scores)
-
 
         for dr_tag in DR_TAGS:
             Logs.set_log_file(f"Step_2_{dr_tag}")
