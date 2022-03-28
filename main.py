@@ -174,7 +174,7 @@ def get_plot_fn(tag=None, root_path='./plots', ftype='.png'):
         fn_parts = full_fn[0:pos]
 
         part1 = fn_parts + "_" + str(no_overwrite)
-        test_fn = part1 + '.png'
+        test_fn = part1 + ftype
 
     full_fn = test_fn
 
@@ -800,7 +800,7 @@ def run_cluster_scoring(
         score_func=None, use_prev=False, update=False
 ):
     import numpy as np
-    if use_prev or update:
+    if use_prev and update:
         ds_tag = get_ds[TAGK]
         prev_found = check_for_previous_results(
             s1=cur_step(), ds_tag=ds_tag, cl_tag=cl_tag,
@@ -821,6 +821,11 @@ def run_cluster_scoring(
 
     print(f"Evaluating cluster sizes: {str(cl_list[0:4])[:-1]},... {cl_list[int(len(cl_list)/2)]},... {str(cl_list[-4:])[1:]}")
     if update:
+        ds_tag = get_ds[TAGK]
+        prev_found = check_for_previous_results(
+            s1=cur_step(), ds_tag=ds_tag, cl_tag=cl_tag,
+            custom_tag=CL_SCORING_RES
+        )
         results = incr_scoring(
             cl_list, get_ds=get_ds, ds_tag=ds_tag,
             cl_tag= cl_tag, score_func=score_func, update=update, targ=prev_found)
@@ -994,16 +999,27 @@ def cluster_plot(get_ds=None, threshold=6, labels=None, dr_tag=None, cl_tag=None
 
     matplotlib.rcParams['font.size'] = 18
     sns.set_context('talk', font_scale=1.2);
+    ds_tag = get_ds[TAGK]
+
+    dr_text = f'reduced by {dr_tag}'
+    if dr_tag is None:
+        dr_text = 'unreduced'
+    if cl_tag is None:
+        cl_text = "orig. labels"
+    else:
+        cl_text = f'{cl_tag} labels'
+        
+    title = f'{ds_tag}-{cl_text}, {dr_text}'
 
     try:
-        sns.pairplot(df, hue=columns[-1], corner=True, diag_kind='hist')
+        pp=sns.pairplot(df, hue=columns[-1], corner=True, diag_kind='hist')
+        pp.fig.suptitle(title)
+
     except Exception as ex:
         hook = True
         raise
 
-    ds_tag = get_ds[TAGK]
-    if dr_tag is None:
-        dr_tag = 'unreduced'
+
     st = cur_step()
     if fn is None:
         fn = get_plot_fn(tag=f"reduced_{st}_{ds_tag}_{dr_tag}_{cl_tag}")
@@ -1143,8 +1159,7 @@ def set_series(
         cur_s = cur_s[fb]
         cur_st = cur_step()
 
-        assert(cur_st > st)
-        set_np_array(max_cluster_scores, ds_tag, cl_tag, custom_tag='trunc_plot_series', st=st)
+        set_np_array(max_cluster_scores, ds_tag, cl_tag, cur_s, custom_tag='trunc_plot_series', st=st)
 
     xdata[ptag] = f"max y:{pr_fl(cur_s[max_idx, 0])} x:{int(cur_s[max_idx, 1])}"
     data[ptag] = cur_s
@@ -1398,6 +1413,8 @@ def set_np_array(info, k1, k2, a, custom_tag=None, st=None, sfn=None): # ds = k1
         cur_d['max_idx']= int(max_idx)
         cur_d['a'] = a.tolist()
         np.save(a_fn, a)
+        if 'png' in a_fn:
+            hook = True
         cur_d['serialized'] = a_fn
 
     save_cluster_scores(info)
@@ -1425,6 +1442,8 @@ def get_np_array(info, k1, k2, custom_tag=0, st=None):
     a = None
     if 'serialized' in cur_d:
         a_fn = cur_d["serialized"]
+        if 'png' in a_fn:
+            hook = True
         a = np.load(a_fn)
         #assert ((np.array(cur_d['a']) == a).all())
         cur_d['a'] = a.tolist()
@@ -1479,7 +1498,7 @@ def read_cluster_scores(scores, fn='./max_cluster_scores.json'):
                         print(f'{k0}-{k1}-{k2}-{k3}: original == new')
 
 
-def set_serial_store(dump_dir, match_str='saved_npa', fn = './max_cluster_scores.json'):
+def set_serial_store(dump_dir, match_str='saved_npa', fn='./max_cluster_scores.json'):
     import json
     import os
     flist = os.listdir(dump_dir)
@@ -1592,7 +1611,7 @@ def main(args):
                         cl_info = clustering_info[cluster_tag]
                         cl_info[TAGK] = cluster_tag
 
-                        if 'populate':
+                        if 'populate' in args:
                             X, y = get_ds[GETK]()
                             lim = X.shape[0]
                             start=2
